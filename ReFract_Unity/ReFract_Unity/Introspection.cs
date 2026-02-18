@@ -22,17 +22,17 @@ public static class Introspection
         {
             if (obj == null || fieldName == null || fieldName.Length == 0)
                 return null;
-            ReFract_Unity.Plugin.Log.LogDebug("Introspection : Getting field");
+            ReFract.Unity.Plugin.Log.LogDebug("Introspection : Getting field");
             // Get the target field
             FieldInfo field = obj.GetField(fieldName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-            ReFract_Unity.Plugin.Log.LogDebug("Introspection : Field is " + (field == null ? "null" : "not null"));
+            ReFract.Unity.Plugin.Log.LogDebug("Introspection : Field is " + (field == null ? "null" : "not null"));
             if (field == null)
                 return null;
 
-            ReFract_Unity.Plugin.Log.LogDebug("Introspection : Field is " + field.Name);
+            ReFract.Unity.Plugin.Log.LogDebug("Introspection : Field is " + field.Name);
             // Get the delegate that acts as a field accessor the target field
             var del = GetDynamicMethod(obj, field, ilOverride);
-            ReFract_Unity.Plugin.Log.LogDebug("Introspection : Delegate is " + (del == null ? "null" : "not null & " + del.GetType().ToString()));
+            ReFract.Unity.Plugin.Log.LogDebug("Introspection : Delegate is " + (del == null ? "null" : "not null & " + del.GetType().ToString()));
 
             if (del == null)
                 return null;
@@ -42,7 +42,7 @@ public static class Introspection
                 _cachedSetters.Add(obj, new Dictionary<string, RefAction<object, object>>());
 
             _cachedSetters[obj].Add(fieldName, del);
-            ReFract_Unity.Plugin.Log.LogDebug("Introspection : Added delegate to dictionary at " + obj.ToString() + "." + fieldName);
+            ReFract.Unity.Plugin.Log.LogDebug("Introspection : Added delegate to dictionary at " + obj.ToString() + "." + fieldName);
             return del;
         }
     }
@@ -61,17 +61,17 @@ public static class Introspection
             if (obj == null || propName == null || propName.Length == 0)
                 return null;
 
-            ReFract_Unity.Plugin.Log.LogDebug("Introspection : Getting property");
+            ReFract.Unity.Plugin.Log.LogDebug("Introspection : Getting property");
             // Get the target property
             PropertyInfo prop = obj.GetProperty(propName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-            ReFract_Unity.Plugin.Log.LogDebug("Introspection : Property is " + (prop == null ? "null" : "not null"));
+            ReFract.Unity.Plugin.Log.LogDebug("Introspection : Property is " + (prop == null ? "null" : "not null"));
             if (prop == null)
                 return null;
 
-            ReFract_Unity.Plugin.Log.LogDebug("Introspection : Property is " + prop.Name);
+            ReFract.Unity.Plugin.Log.LogDebug("Introspection : Property is " + prop.Name);
             // Get the delegate that acts as a property accessor the target property
             var del = GetDynamicPropMethod(obj, prop);
-            ReFract_Unity.Plugin.Log.LogDebug("Introspection : Delegate is " + (del == null ? "null" : "not null & " + del.GetType().ToString()));
+            ReFract.Unity.Plugin.Log.LogDebug("Introspection : Delegate is " + (del == null ? "null" : "not null & " + del.GetType().ToString()));
 
             if (del == null)
                 return null;
@@ -81,7 +81,7 @@ public static class Introspection
                 _cachedPropSetters.Add(obj, new Dictionary<string, Action<object, object>>());
 
             _cachedPropSetters[obj].Add(propName, del);
-            ReFract_Unity.Plugin.Log.LogDebug("Introspection : Added delegate to dictionary at " + obj.ToString() + "." + propName);
+            ReFract.Unity.Plugin.Log.LogDebug("Introspection : Added delegate to dictionary at " + obj.ToString() + "." + propName);
             return del;
         }
     }
@@ -135,13 +135,13 @@ public static class Introspection
 
             // If the type doesn't match, print out a message and return, doing nothing.
             il.MarkLabel(typeFailed);
-            il.Emit(OpCodes.Ldsfld, typeof(ReFract_Unity.Plugin).GetField("Log"));
+            il.Emit(OpCodes.Ldsfld, typeof(ReFract.Unity.Plugin).GetField("Log"));
             il.Emit(OpCodes.Ldstr, $"Re:Fract : Wrong type for field \"{field.Name}\" which takes \"{field.FieldType}\"");
             il.Emit(OpCodes.Call, typeof(ManualLogSource).GetMethod("LogMessage", new Type[] { typeof(ILogSource), typeof(object) }));
             il.Emit(OpCodes.Ret);
-            ReFract_Unity.Plugin.Log.LogDebug("Introspection : Generated dynamic method with default IL");
+            ReFract.Unity.Plugin.Log.LogDebug("Introspection : Generated dynamic method with default IL");
         }
-        ReFract_Unity.Plugin.Log.LogDebug("Introspection : Creation of DynamicMethod was successful for " + obj.ToString() + "." + field.Name);
+        ReFract.Unity.Plugin.Log.LogDebug("Introspection : Creation of DynamicMethod was successful for " + obj.ToString() + "." + field.Name);
         return (RefAction<object, object>)method.CreateDelegate(typeof(RefAction<,>).MakeGenericType(typeof(object), typeof(object)));
     }
 
@@ -165,7 +165,7 @@ public static class Introspection
         il.Emit(OpCodes.Call, method);
         il.Emit(OpCodes.Ret);
 
-        ReFract_Unity.Plugin.Log.LogDebug("Introspection : Created delegate for property " + prop.Name);
+        ReFract.Unity.Plugin.Log.LogDebug("Introspection : Created delegate for property " + prop.Name);
 
         var ret = (Action<object, object>)del.CreateDelegate(typeof(Action<object, object>));
         // Add the delegate to the dictionary

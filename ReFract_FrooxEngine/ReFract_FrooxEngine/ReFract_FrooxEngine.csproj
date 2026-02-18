@@ -6,8 +6,8 @@
     <TargetFramework>net10.0</TargetFramework>
     <RepositoryUrl>https://github.com/noblereign/ReFract-ReLoaded</RepositoryUrl>
     <PackageId>dog.glacier.ReFract</PackageId>
-    <Product>ReFract_FrooxEngine</Product>
-    <RootNamespace>ReFract_FrooxEngine</RootNamespace>
+    <Product>ReFract.FrooxEngine</Product>
+    <RootNamespace>ReFract</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <Deterministic>true</Deterministic>
@@ -31,6 +31,10 @@
     <PackageReference Include="ResoniteModding.BepisResoniteWrapper" Version="1.*" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Include="..\..\ReFract_Shared\**\*.cs" />
+  </ItemGroup>
+
   <!-- NuGet fallback stripped game references -->
   <ItemGroup Condition="!Exists('$(GamePath)')">
     <PackageReference Include="Resonite.GameLibs" Version="2025.*" PrivateAssets="all" />
@@ -48,6 +52,17 @@
     </Reference>
     <Reference Include="Renderite.Shared">
       <HintPath>$(GamePath)Renderite.Shared.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="InterProcessLib.FrooxEngine">
+      <HintPath>$(GamePath)BepInEx/Plugins/InterprocessLib.BepisLoader/InterprocessLib.FrooxEngine.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="InterprocessLib.BepisLoader_Extensions.dll">
+      <HintPath>$(GamePath)BepInEx/Plugins/InterprocessLib.BepisLoader/InterprocessLib.BepisLoader_Extensions.dll</HintPath>
       <Private>False</Private>
     </Reference>
   </ItemGroup>

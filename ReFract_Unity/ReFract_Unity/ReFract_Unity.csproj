@@ -27,6 +27,10 @@
 
   <!-- Modding dependencies -->
 
+  <ItemGroup>
+    <Compile Include="..\..\ReFract_Shared\**\*.cs" />
+  </ItemGroup>
+
   <!-- NuGet fallback stripped game references -->
 
   <!-- Local game references -->
@@ -54,9 +58,6 @@
     <Reference Include="Renderite.Unity">
       <HintPath>$(GamePath)Renderer\Renderite.Renderer_Data\Managed\Renderite.Unity.dll</HintPath>
     </Reference>
-    <Reference Include="SteamVR">
-      <HintPath>$(GamePath)Renderer\Renderite.Renderer_Data\Managed\SteamVR.dll</HintPath>
-    </Reference>
     <Reference Include="UnityEngine">
       <HintPath>$(GamePath)Renderer\Renderite.Renderer_Data\Managed\UnityEngine.dll</HintPath>
     </Reference>
@@ -64,6 +65,18 @@
       <HintPath>$(GamePath)Renderer\Renderite.Renderer_Data\Managed\UnityEngine.CoreModule.dll</HintPath>
     </Reference>
   </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="InterprocessLib.Unity">
+      <HintPath>$(GamePath)Renderer/BepInEx/plugins/InterprocessLib.BepInEx/InterprocessLib.Unity.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="InterprocessLib.BepInEx_Extensions.dll">
+      <HintPath>$(GamePath)Renderer/BepInEx/plugins/InterprocessLib.BepInEx/InterprocessLib.BepInEx_Extensions.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+  
 
   <!-- Post-build copy to game plugins folder -->
   <Target Name="PostBuild" AfterTargets="PostBuildEvent">
