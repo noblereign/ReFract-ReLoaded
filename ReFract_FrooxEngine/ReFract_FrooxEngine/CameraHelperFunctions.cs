@@ -33,15 +33,15 @@ namespace ReFract
                     break;
                 case color c:
                     command.ValueType = ReFractCommandValueType.Color;
-                    command.ColorValue = c;
+                    command.ColorValue = new ReFractColor { r = c.r, g = c.g, b = c.b, a = c.a };
                     break;
                 case float2 f2:
                     command.ValueType = ReFractCommandValueType.Vector2;
-                    command.Vector2Value = f2;
+                    command.Vector2Value = new ReFractVector2 { x = f2.x, y = f2.y };
                     break;
                 case float4 f4:
                     command.ValueType = ReFractCommandValueType.Vector4;
-                    command.Vector4Value = f4;
+                    command.Vector4Value = new ReFractVector4 { x = f4.x, y = f4.y, z = f4.z, w = f4.w };
                     break;
                 case string s:
                     command.ValueType = ReFractCommandValueType.String;
@@ -51,7 +51,7 @@ namespace ReFract
                     Plugin.Log.LogWarning($"Re:Fract: Unsupported value type for {camName}/{componentName}/{paramName}: {typeof(T)}");
                     return;
             }
-            Plugin.Log.LogMessage($"Re:Fract: Sending {camName}/{componentName}/{paramName}: {typeof(T)}");
+
             Plugin._messenger.SendObject("SetVariable", command);
         }
 
