@@ -2,6 +2,7 @@
 using System;
 using System.Reflection;
 using System.Collections;
+using System.Collections.Generic;
 using InterprocessLib;
 using ReFract.Shared;
 using Renderite.Unity;
@@ -15,7 +16,7 @@ namespace ReFract.Unity;
 public class Plugin : BaseUnityPlugin
 {
     private Messenger _msg;
-    private static readonly Dictionary<int, UnityEngine.Camera> _cameraCache = new();
+    private static readonly Dictionary<int, List<UnityEngine.Camera>> _cameraCache = new();
     
     public static Dictionary<string, Type> TypeLookups = new Dictionary<string, Type>
     {
@@ -58,7 +59,7 @@ public class Plugin : BaseUnityPlugin
             return;
         }
 
-        if (!_cameraCache.TryGetValue(command.RenderTextureId, out var camera) || camera == null)
+        if (!_cameraCache.TryGetValue(command.RenderTextureId, out var cameras) || cameras == null)
         {
             Debug.Log($"[Re:Fract] Camera for {command.RenderTextureId} not in cache or is null. Searching...");
             
@@ -70,29 +71,35 @@ public class Plugin : BaseUnityPlugin
             }
             Debug.Log($"[Re:Fract] Found render texture asset for {command.RenderTextureId}");
 
-            camera = FindCameraRenderingTo(rtAsset.Texture);
-            if (camera == null)
+            cameras = FindCamerasRenderingTo(rtAsset.Texture);
+            if (cameras.Count == 0)
             {
                 Debug.LogWarning($"[Re:Fract] ...but no camera was found. Waiting a few frames...");
                 StartCoroutine(WaitForCameraAndApply(command));
                 return;
             }
-            _cameraCache[command.RenderTextureId] = camera;
-            Debug.Log($"[Re:Fract] Found and cached camera '{camera.name}' for ID {command.RenderTextureId}");
+            _cameraCache[command.RenderTextureId] = cameras;
+            Debug.Log($"[Re:Fract] Found and cached {cameras.Count} cameras for ID {command.RenderTextureId}");
         }
         else
         {
-            Debug.Log($"[Re:Fract] Using cached camera '{camera.name}' for ID {command.RenderTextureId}");
+            Debug.Log($"[Re:Fract] Using cached cameras for ID {command.RenderTextureId}");
         }
 
-        if (camera == null) // It might have been destroyed since last checked
+        cameras.RemoveAll(c => c == null);
+
+        if (cameras.Count == 0)
         {
-            Debug.LogWarning($"[Re:Fract] ERROR: Cached camera for {command.RenderTextureId} was destroyed. Removing from cache.");
+            Debug.LogWarning($"[Re:Fract] ERROR: All cached cameras for {command.RenderTextureId} were destroyed. Removing from cache.");
             _cameraCache.Remove(command.RenderTextureId);
             return;
         }
 
-        ApplyCommand(camera, command);
+        foreach (var camera in cameras)
+        {
+            EnsurePostProcessVolume(camera);
+            ApplyCommand(camera, command);
+        }
     }
 
     private IEnumerator WaitForCameraAndApply(ReFractCommand command)
@@ -103,16 +110,56 @@ public class Plugin : BaseUnityPlugin
         var rtAsset = RenderingManager.Instance.RenderTextures.GetAsset(command.RenderTextureId);
         if (rtAsset?.Texture == null) yield break;
 
-        var camera = FindCameraRenderingTo(rtAsset.Texture);
-        if (camera != null)
+        var cameras = FindCamerasRenderingTo(rtAsset.Texture);
+        if (cameras.Count > 0)
         {
-            _cameraCache[command.RenderTextureId] = camera;
-            Debug.Log($"[Re:Fract] Found camera '{camera.name}' after waiting.");
-            ApplyCommand(camera, command);
+            _cameraCache[command.RenderTextureId] = cameras;
+            Debug.Log($"[Re:Fract] Found {cameras.Count} cameras after waiting.");
+            foreach (var camera in cameras)
+            {
+                EnsurePostProcessVolume(camera);
+                ApplyCommand(camera, command);
+            }
         }
         else
         {
             Debug.LogWarning($"[Re:Fract] ...still no camera found after waiting.");
+        }
+    }
+
+    private void EnsurePostProcessVolume(Camera camera)
+    {
+        var layer = camera.gameObject.GetComponent<PostProcessLayer>();
+        if (layer != null)
+        {
+            int objectLayer = 1 << camera.gameObject.layer;
+            if ((layer.volumeLayer & objectLayer) == 0)
+            {
+                Debug.Log($"[Re:Fract] PostProcessLayer volumeLayer mask mismatch. Adding layer {camera.gameObject.layer}.");
+                layer.volumeLayer |= objectLayer;
+            }
+        }
+
+        var volume = camera.gameObject.GetComponent<PostProcessVolume>();
+        if (volume == null)
+        {
+            Debug.Log($"[Re:Fract] Camera '{camera.name}' does not have a PostProcessVolume. Adding one.");
+            volume = camera.gameObject.AddComponent<PostProcessVolume>();
+            volume.isGlobal = true;
+        }
+
+        if (volume.profile == null)
+        {
+            Debug.Log($"[Re:Fract] PostProcessVolume on '{camera.name}' has no profile. Creating one and adding all settings.");
+            volume.profile = ScriptableObject.CreateInstance<PostProcessProfile>();
+            foreach (var type in TypeLookups.Values)
+            {
+                if (typeof(PostProcessEffectSettings).IsAssignableFrom(type))
+                {
+                    Debug.Log($"[Re:Fract] Adding setting '{type.Name}' to new profile.");
+                    volume.profile.AddSettings(type);
+                }
+            }
         }
     }
 
@@ -121,30 +168,33 @@ public class Plugin : BaseUnityPlugin
         Debug.Log($"[Re:Fract] Searching for component '{command.ComponentName}' on camera '{camera.name}'");
         
         object target = null;
-        Type type = null;
-        if (TypeLookups.TryGetValue(command.ComponentName, out type))
+        if (!TypeLookups.TryGetValue(command.ComponentName, out Type type))
         {
-            target = camera.GetComponent(type);
-        }
-        else
-        {
-            //target = camera.GetComponent(command.ComponentName);
             Debug.LogWarning($"[Re:Fract] Unsupported Type {command.ComponentName}");
             return;
         }
         
-        if (target == null)
+        if (typeof(PostProcessEffectSettings).IsAssignableFrom(type))
         {
-            // Try to find the component in the PostProcessLayer bundles
-            var postProcessLayer = camera.gameObject.GetComponent<PostProcessLayer>();
-            if (postProcessLayer != null)
+            var volume = camera.GetComponent<PostProcessVolume>();
+            if (volume != null && volume.profile != null)
             {
-                var bundle = postProcessLayer.GetBundle(type);
-                if (bundle != null)
+                foreach (var setting in volume.profile.settings)
                 {
-                    target = bundle.settings;
+                    if (setting.GetType() == type)
+                    {
+                        target = setting;
+                        break;
+                    }
                 }
+                if (target == null)
+                    target = volume.profile.AddSettings(type);
             }
+        }
+        else
+        {
+            // For MonoBehaviours like AmplifyOcclusion
+            target = camera.GetComponent(type);
         }
 
         if (target == null)
@@ -258,12 +308,12 @@ public class Plugin : BaseUnityPlugin
         }
     }
 
-    private static UnityEngine.Camera? FindCameraRenderingTo(RenderTexture target)
+    private static List<UnityEngine.Camera> FindCamerasRenderingTo(RenderTexture target)
     {
-        //return UnityEngine.Object.FindObjectsOfType<UnityEngine.Camera>().FirstOrDefault(c => c.activeTexture == target);
         // Find all cameras currently in the scene
         Debug.Log($"[Re:Fract] Searching for RenderTexture {(target ? target.name : "NULL TARGET")} @ {(target ? target.GetInstanceID() : "N/A")}");
         Camera[] allCameras = FindObjectsOfType<Camera>();
+        List<UnityEngine.Camera> foundCameras = new List<UnityEngine.Camera>();
 
         foreach (Camera cam in allCameras)
         {
@@ -271,11 +321,11 @@ public class Plugin : BaseUnityPlugin
             // Check if the camera's targetTexture matches the desired one
             if (cam.targetTexture == target)
             {
-                return cam;
+                foundCameras.Add(cam);
             }
         }
 
-        Debug.LogWarning("[Re:Fract] No camera found rendering to the specified RenderTexture.");
-        return null;
+        if (foundCameras.Count == 0) Debug.LogWarning("[Re:Fract] No camera found rendering to the specified RenderTexture.");
+        return foundCameras;
     }
 }
