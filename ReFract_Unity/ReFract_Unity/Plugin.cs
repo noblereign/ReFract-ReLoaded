@@ -107,17 +107,31 @@ public class Plugin : BaseUnityPlugin
             if (sourceCam != null)
             {
                 Debug.Log($"[Re:Fract] Syncing PostProcess from '{sourceCam.name}' to Capture Camera.");
-                var sourceVolume = sourceCam.GetComponent<PostProcessVolume>();
+                var sourceVolume = sourceCam.GetComponentInChildren<PostProcessVolume>();
                 if (sourceVolume != null && sourceVolume.profile != null)
                 {
-                    if (captureVolume == null) captureVolume = captureCam.gameObject.AddComponent<PostProcessVolume>();
+                    int ignoreRaycastLayer = LayerMask.NameToLayer("Ignore Raycast");
+                    if (captureVolume == null)
+                    {
+                        var child = new GameObject("ReFract_Volume");
+                        child.transform.SetParent(captureCam.transform, false);
+                        child.layer = ignoreRaycastLayer;
+                        captureVolume = child.AddComponent<PostProcessVolume>();
+                        var col = child.AddComponent<BoxCollider>();
+                        col.isTrigger = true;
+                        col.size = Vector3.one * 0.01f;
+                        captureVolume.isGlobal = false;
+                    }
                     captureVolume.enabled = true;
-                    captureVolume.isGlobal = true;
                     captureVolume.profile = sourceVolume.profile;
                     captureVolume.weight = sourceVolume.weight;
 
                     var layer = captureCam.GetComponent<PostProcessLayer>();
-                    if (layer != null) layer.volumeLayer |= (1 << captureCam.gameObject.layer);
+                    if (layer != null)
+                    {
+                        layer.volumeLayer |= (1 << ignoreRaycastLayer);
+                        layer.volumeTrigger = captureCam.transform;
+                    }
                 }
             }
             else if (captureVolume != null)
@@ -208,35 +222,81 @@ public class Plugin : BaseUnityPlugin
 
     private void EnsurePostProcessVolume(Camera camera)
     {
+        int ignoreRaycastLayer = LayerMask.NameToLayer("Ignore Raycast");
+
         var layer = camera.gameObject.GetComponent<PostProcessLayer>();
         if (layer != null)
         {
-            int objectLayer = 1 << camera.gameObject.layer;
-            if ((layer.volumeLayer & objectLayer) == 0)
+            layer.volumeTrigger = camera.transform;
+            int volumeLayerMask = 1 << ignoreRaycastLayer;
+            if ((layer.volumeLayer & volumeLayerMask) == 0)
             {
-                Debug.Log($"[Re:Fract] PostProcessLayer volumeLayer mask mismatch. Adding layer {camera.gameObject.layer}.");
-                layer.volumeLayer |= objectLayer;
+                Debug.Log($"[Re:Fract] PostProcessLayer volumeLayer mask mismatch. Adding layer {ignoreRaycastLayer} (Ignore Raycast).");
+                layer.volumeLayer |= volumeLayerMask;
             }
         }
 
-        var volume = camera.gameObject.GetComponent<PostProcessVolume>();
-        if (volume == null)
+        // Cleanup legacy components on the camera itself
+        var legacyVol = camera.GetComponent<PostProcessVolume>();
+        if (legacyVol != null) Destroy(legacyVol);
+        var legacyCol = camera.GetComponent<BoxCollider>();
+        if (legacyCol != null) Destroy(legacyCol);
+
+        // Move Volume to a child object on "Ignore Raycast" layer
+        Transform child = camera.transform.Find("ReFract_Volume");
+        if (child == null)
         {
-            Debug.Log($"[Re:Fract] Camera '{camera.name}' does not have a PostProcessVolume. Adding one.");
-            volume = camera.gameObject.AddComponent<PostProcessVolume>();
-            volume.isGlobal = true;
+            GameObject go = new GameObject("ReFract_Volume");
+            go.transform.SetParent(camera.transform, false);
+            go.layer = ignoreRaycastLayer;
+            child = go.transform;
         }
 
+        var volume = child.GetComponent<PostProcessVolume>();
+        if (volume == null)
+        {
+            Debug.Log($"[Re:Fract] Creating PostProcessVolume on child of '{camera.name}'.");
+            volume = child.gameObject.AddComponent<PostProcessVolume>();
+        }
+
+        volume.isGlobal = false;
+        var collider = child.GetComponent<BoxCollider>();
+        if (collider == null)
+        {
+            collider = child.gameObject.AddComponent<BoxCollider>();
+            collider.isTrigger = true;
+            collider.size = Vector3.one * 0.01f;
+        }
+
+        // Ensure profile is unique
+        string uniqueName = $"ReFract_Profile_{camera.GetInstanceID()}";
         if (volume.profile == null)
         {
             Debug.Log($"[Re:Fract] PostProcessVolume on '{camera.name}' has no profile. Creating one and adding all settings.");
-            volume.profile = ScriptableObject.CreateInstance<PostProcessProfile>();
+            var newProfile = ScriptableObject.CreateInstance<PostProcessProfile>();
+            newProfile.name = uniqueName;
+            volume.profile = newProfile;
             foreach (var type in TypeLookups.Values)
             {
                 if (typeof(PostProcessEffectSettings).IsAssignableFrom(type))
                 {
                     Debug.Log($"[Re:Fract] Adding setting '{type.Name}' to new profile.");
                     volume.profile.AddSettings(type);
+                }
+            }
+        }
+        else if (volume.profile.name != uniqueName)
+        {
+            Debug.Log($"[Re:Fract] Ensuring unique profile for '{camera.name}'.");
+            var newProfile = Instantiate(volume.profile);
+            newProfile.name = uniqueName;
+            volume.profile = newProfile;
+            
+            foreach (var type in TypeLookups.Values)
+            {
+                if (typeof(PostProcessEffectSettings).IsAssignableFrom(type) && !newProfile.HasSettings(type))
+                {
+                    newProfile.AddSettings(type);
                 }
             }
         }
@@ -255,7 +315,7 @@ public class Plugin : BaseUnityPlugin
         
         if (typeof(PostProcessEffectSettings).IsAssignableFrom(type))
         {
-            var volume = camera.GetComponent<PostProcessVolume>();
+            var volume = camera.GetComponentInChildren<PostProcessVolume>();
             if (volume != null && volume.profile != null)
             {
                 foreach (var setting in volume.profile.settings)
