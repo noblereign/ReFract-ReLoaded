@@ -55,11 +55,17 @@
     <Reference Include="BepInEx">
       <HintPath>$(GamePath)Renderer\BepInEx\core\BepInEx.dll</HintPath>
     </Reference>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(GamePath)Renderer\Renderite.Renderer_Data\Managed\Assembly-CSharp.dll</HintPath>
+    </Reference>
     <Reference Include="Renderite.Unity">
       <HintPath>$(GamePath)Renderer\Renderite.Renderer_Data\Managed\Renderite.Unity.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine">
       <HintPath>$(GamePath)Renderer\Renderite.Renderer_Data\Managed\UnityEngine.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.Postprocessing.Runtime">
+      <HintPath>$(GamePath)Renderer\Renderite.Renderer_Data\Managed\Unity.Postprocessing.Runtime.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.CoreModule">
       <HintPath>$(GamePath)Renderer\Renderite.Renderer_Data\Managed\UnityEngine.CoreModule.dll</HintPath>

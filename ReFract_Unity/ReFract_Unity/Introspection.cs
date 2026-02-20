@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Reflection.Emit;
+using UnityEngine;
 namespace ReFract;
 
 // The things I do to avoid reflection...
@@ -60,7 +61,7 @@ public static class Introspection
             if (obj == null || propName == null || propName.Length == 0)
                 return null;
 
-            Console.WriteLine("Introspection : Getting property");
+            Console.WriteLine($"Introspection : Getting property of {obj.ToString()} with name {propName}");
             // Get the target property
             PropertyInfo prop = obj.GetProperty(propName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
             Console.WriteLine("Introspection : Property is " + (prop == null ? "null" : "not null"));
@@ -134,8 +135,8 @@ public static class Introspection
 
             // If the type doesn't match, print out a message and return, doing nothing.
             il.MarkLabel(typeFailed);
-            il.Emit(OpCodes.Ldstr, $"Re:Fract : Wrong type for field \"{field.Name}\" which takes \"{field.FieldType}\"");
-            il.Emit(OpCodes.Call, typeof(Console).GetMethod("WriteLine", new Type[] { typeof(string) }));
+            il.Emit(OpCodes.Ldstr, $"[Re:Fract] Wrong type for field \"{field.Name}\" which takes \"{field.FieldType}\"");
+            il.Emit(OpCodes.Call, typeof(Debug).GetMethod("LogWarning", new Type[] { typeof(string) }));
             il.Emit(OpCodes.Ret);
             Console.WriteLine("Introspection : Generated dynamic method with default IL");
         }
