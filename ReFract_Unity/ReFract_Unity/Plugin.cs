@@ -3,8 +3,10 @@ using System;
 using System.Reflection;
 using System.Collections;
 using System.Collections.Generic;
+using HarmonyLib;
 using InterprocessLib;
 using ReFract.Shared;
+using Renderite.Shared;
 using Renderite.Unity;
 using UnityEngine;
 using UnityEngine.Rendering.PostProcessing;
@@ -42,10 +44,87 @@ public class Plugin : BaseUnityPlugin
         {
             _msg.ReceiveObject<ReFractCommand>("SetVariable", HandleSetVariable);
             Debug.Log($"[Re:Fract] Receiver registered!");
+
+            Harmony harmony = new Harmony("dog.glacier.ReFractUnity");
+            harmony.PatchAll();
         }
         catch (TypeLoadException ex)
         {
             Debug.Log($"[Re:Fract] Failed to register receiver. This is likely a DLL version mismatch: {ex}");
+        }
+    }
+
+    [HarmonyPatch(typeof(CameraRenderer), "Render")]
+    public static class CameraRenderer_Patch
+    {
+        private static FieldInfo _cameraField;
+        private static FieldInfo _camera360Field;
+
+        [HarmonyPrefix]
+        public static void Prefix(CameraRenderTask task)
+        {
+            Camera captureCam = null;
+
+            // Determine which camera Renderite is using (Standard or 360)
+            if (task.parameters.fov >= 180f)
+            {
+                if (_camera360Field == null) _camera360Field = AccessTools.Field(typeof(CameraRenderer), "camera360");
+                var cam360 = _camera360Field.GetValue(null);
+                if (cam360 != null)
+                {
+                    var prop = AccessTools.Property(cam360.GetType(), "Camera");
+                    captureCam = prop?.GetValue(cam360) as Camera;
+                }
+            }
+            else
+            {
+                if (_cameraField == null) _cameraField = AccessTools.Field(typeof(CameraRenderer), "camera");
+                captureCam = _cameraField.GetValue(null) as Camera;
+            }
+
+            if (captureCam == null) return;
+
+            Vector3 taskPos = new Vector3(task.position.x, task.position.y, task.position.z);
+            Camera sourceCam = null;
+
+            // Find the ReFract-managed camera that matches the photo's position
+            foreach (var list in _cameraCache.Values)
+            {
+                if (list == null) continue;
+                foreach (var cam in list)
+                {
+                    if (cam != null && Vector3.Distance(cam.transform.position, taskPos) < 0.1f)
+                    {
+                        sourceCam = cam;
+                        break;
+                    }
+                }
+                if (sourceCam != null) break;
+            }
+
+            var captureVolume = captureCam.gameObject.GetComponent<PostProcessVolume>();
+
+            if (sourceCam != null)
+            {
+                Debug.Log($"[Re:Fract] Syncing PostProcess from '{sourceCam.name}' to Capture Camera.");
+                var sourceVolume = sourceCam.GetComponent<PostProcessVolume>();
+                if (sourceVolume != null && sourceVolume.profile != null)
+                {
+                    if (captureVolume == null) captureVolume = captureCam.gameObject.AddComponent<PostProcessVolume>();
+                    captureVolume.enabled = true;
+                    captureVolume.isGlobal = true;
+                    captureVolume.profile = sourceVolume.profile;
+                    captureVolume.weight = sourceVolume.weight;
+
+                    var layer = captureCam.GetComponent<PostProcessLayer>();
+                    if (layer != null) layer.volumeLayer |= (1 << captureCam.gameObject.layer);
+                }
+            }
+            else if (captureVolume != null)
+            {
+                // Disable the volume if this is a normal photo to avoid leaking effects
+                captureVolume.enabled = false;
+            }
         }
     }
 

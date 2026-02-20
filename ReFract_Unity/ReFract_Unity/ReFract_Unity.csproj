@@ -70,6 +70,9 @@
     <Reference Include="UnityEngine.CoreModule">
       <HintPath>$(GamePath)Renderer\Renderite.Renderer_Data\Managed\UnityEngine.CoreModule.dll</HintPath>
     </Reference>
+    <Reference Include="UnityEngine.PhysicsModule">
+      <HintPath>$(GamePath)Renderer\Renderite.Renderer_Data\Managed\UnityEngine.PhysicsModule.dll</HintPath>
+    </Reference>
   </ItemGroup>
 
   <ItemGroup>
