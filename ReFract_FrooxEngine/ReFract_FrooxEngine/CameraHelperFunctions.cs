@@ -1,3 +1,5 @@
+using System.Collections;
+using System.Reflection;
 using Elements.Core;
 using FrooxEngine;
 using ReFract.Shared;
@@ -87,8 +89,62 @@ namespace ReFract
 
         public static void RefreshCameraState(DynamicReferenceVariable<Camera> camVar, Camera camera)
         {
-            // TODO: Implement camera state refresh
-            Plugin.Log.LogMessage($"Reset {camera.Name} ({camera.ReferenceID})");
+            Plugin.Log.LogMessage($"Re:Fract: Reset {camera.Name} ({camera.ReferenceID})");
+            string name = camVar.VariableName;
+            string[] splitName = name.Split('_');
+
+            // We need to use reflection to get the dynamic variable space handler
+            var handlerField = camVar.GetType().BaseType.GetField("handler", BindingFlags.Instance | BindingFlags.NonPublic);
+            if (handlerField == null)
+            {
+                Plugin.Log.LogWarning("Re:Fract: Could not find handler field on DynamicReferenceVariable.");
+                return;
+            }
+
+            var handler = handlerField.GetValue(camVar) as DynamicVariableHandler<Camera>;
+            if (handler?.CurrentSpace == null) return;
+
+            // Now we get the dictionary of all dynamic values in the space
+            var spaceDictField = typeof(DynamicVariableSpace).GetField("_dynamicValues", BindingFlags.Instance | BindingFlags.NonPublic);
+            if (spaceDictField == null)
+            {
+                Plugin.Log.LogWarning("Re:Fract: Could not find _dynamicValues field on DynamicVariableSpace.");
+                return;
+            }
+
+            if (spaceDictField.GetValue(handler.CurrentSpace) is not System.Collections.IDictionary spaceDict) return;
+
+            // Iterate over all the dynamic variables and re-apply the ones for our camera
+            foreach (var key in spaceDict.Keys)
+            {
+                var keyName = key.GetType().GetField("name")?.GetValue(key) as string;
+                if (keyName == null) continue;
+
+                string[] stringTokens = keyName.Split('_');
+
+                // Check if the variable name matches the Re:Fract camera naming convention
+                // Camera variable: ReFract_Cam_<Name>
+                // Setting variable: ReFract_<Name>_<Component>_<Setting>
+                if (splitName.Length == 3 && splitName[0] == "ReFract" && splitName[1] == "Cam" &&
+                    stringTokens.Length == 4 && stringTokens[0] == "ReFract" && stringTokens[1] == splitName[2])
+                {
+                    var value = spaceDict[key]?.GetType().GetProperty("Value")?.GetValue(spaceDict[key]);
+                    if (value == null) continue;
+
+                    Plugin.Log.LogMessage($"Re:Fract: Refreshing '{keyName}' for camera '{stringTokens[1]}'");
+
+                    // We need to use reflection to call the generic SetCameraVariable method with the correct value type
+                    var method = typeof(CameraHelperFunctions).GetMethod("SetCameraVariable");
+                    if (method == null)
+                    {
+                        Plugin.Log.LogWarning("Re:Fract: Could not find SetCameraVariable method.");
+                        continue;
+                    }
+
+                    var genericMethod = method.MakeGenericMethod(value.GetType());
+                    genericMethod.Invoke(null, new object[] { handler.CurrentSpace, stringTokens[1], stringTokens[2], stringTokens[3], value });
+                }
+            }
         }
     }
 }

@@ -154,7 +154,13 @@ public class Plugin : BaseUnityPlugin
                     if (rootVolume != null) rootVolume.enabled = false;
 
                     childVolume.enabled = true;
-                    childVolume.profile = sourceVolume.profile;
+
+                    // Clone profile to disable motion blur without affecting source
+                    var profileClone = Instantiate(sourceVolume.profile);
+                    var mb = profileClone.GetSetting<MotionBlur>();
+                    if (mb != null) mb.enabled.value = false;
+
+                    childVolume.profile = profileClone;
                     childVolume.weight = sourceVolume.weight;
 
                     var layer = captureCam.GetComponent<PostProcessLayer>();
