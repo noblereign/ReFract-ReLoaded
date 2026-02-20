@@ -9,9 +9,39 @@ namespace ReFract
         public static void SetCameraVariable<T>(DynamicVariableSpace space, string camName, string componentName, string paramName, T value)
         {
             if (Plugin._messenger == null) return;
+            if (space == null) return;
+
+            // Get the camera's render texture asset ID
+            if (!space.TryReadValue(Plugin.DynVarCamKeyString + camName, out Camera cameraRef))
+            {
+                Plugin.Log.LogWarning($"Re:Fract: Could not find camera variable for {camName}");
+                return;
+            }
+
+            var camera = cameraRef;
+            if (camera == null)
+            {
+                Plugin.Log.LogWarning($"Re:Fract: Camera for {camName} is null");
+                return;
+            }
+
+            var renderTexture = camera.RenderTexture.Target;
+            if (renderTexture == null)
+            {
+                Plugin.Log.LogWarning($"Re:Fract: Render texture for camera {camName} is null");
+                return;
+            }
+
+            var assetId = renderTexture.Asset.AssetId;
+            if (assetId == 0)
+            {
+                Plugin.Log.LogWarning($"Re:Fract: Asset ID for render texture of camera {camName} is 0");
+                return;
+            }
 
             var command = new ReFractCommand
             {
+                RenderTextureId = assetId,
                 CameraName = camName,
                 ComponentName = componentName,
                 ParameterName = paramName,

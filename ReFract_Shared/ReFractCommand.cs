@@ -34,6 +34,7 @@ namespace ReFract.Shared
 
     public class ReFractCommand : RendererCommand
     {
+        public int RenderTextureId;
         public string CameraName = "";
         public string ComponentName = "";
         public string ParameterName = "";
@@ -48,6 +49,7 @@ namespace ReFract.Shared
 
         public override void Pack(ref MemoryPacker packer)
         {
+            packer.Write(RenderTextureId);
             packer.Write(CameraName);
             packer.Write(ComponentName);
             packer.Write(ParameterName);
@@ -88,6 +90,7 @@ namespace ReFract.Shared
 
         public override void Unpack(ref MemoryUnpacker unpacker)
         {
+            unpacker.Read(ref RenderTextureId);
             unpacker.Read(ref CameraName);
             unpacker.Read(ref ComponentName);
             unpacker.Read(ref ParameterName);
