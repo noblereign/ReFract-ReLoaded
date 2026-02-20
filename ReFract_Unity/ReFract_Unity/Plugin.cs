@@ -85,7 +85,9 @@ public class Plugin : BaseUnityPlugin
             if (captureCam == null) return;
 
             Vector3 taskPos = new Vector3(task.position.x, task.position.y, task.position.z);
+            Quaternion taskRot = new Quaternion(task.rotation.x, task.rotation.y, task.rotation.z, task.rotation.w);
             Camera sourceCam = null;
+            float minDistance = float.MaxValue;
 
             // Find the ReFract-managed camera that matches the photo's position
             foreach (var list in _cameraCache.Values)
@@ -93,16 +95,41 @@ public class Plugin : BaseUnityPlugin
                 if (list == null) continue;
                 foreach (var cam in list)
                 {
-                    if (cam != null && Vector3.Distance(cam.transform.position, taskPos) < 0.1f)
+                    if (cam == null) continue;
+
+                    // 1. FOV / Projection Check (These rarely change with movement)
+                    if (cam.orthographic)
                     {
-                        sourceCam = cam;
-                        break;
+                        if (task.parameters.projection != CameraProjection.Orthographic) continue;
+                        if (Mathf.Abs(cam.orthographicSize - task.parameters.orthographicSize) > 0.01f) continue;
+                    }
+                    else
+                    {
+                        if (task.parameters.projection == CameraProjection.Orthographic) continue;
+                        // Skip FOV check for 360 renders (fov >= 180) as source cam might be normal
+                        if (task.parameters.fov < 180f && Mathf.Abs(cam.fieldOfView - task.parameters.fov) > 5.0f) continue;
+                    }
+
+                    // 2. Position & Rotation Check (Relaxed for movement)
+                    float dist = Vector3.Distance(cam.transform.position, taskPos);
+                    float angle = Quaternion.Angle(cam.transform.rotation, taskRot);
+
+                    // Thresholds: 2.0m distance, 15 degrees rotation to account for latency
+                    if (dist < 2.0f && angle < 15.0f)
+                    {
+                        if (dist < minDistance)
+                        {
+                            minDistance = dist;
+                            sourceCam = cam;
+                        }
                     }
                 }
-                if (sourceCam != null) break;
             }
 
-            var captureVolume = captureCam.gameObject.GetComponent<PostProcessVolume>();
+            // Check for both root and child volumes to ensure we clean up everything
+            var rootVolume = captureCam.gameObject.GetComponent<PostProcessVolume>();
+            var childTransform = captureCam.transform.Find("ReFract_Volume");
+            var childVolume = childTransform != null ? childTransform.GetComponent<PostProcessVolume>() : null;
 
             if (sourceCam != null)
             {
@@ -111,20 +138,24 @@ public class Plugin : BaseUnityPlugin
                 if (sourceVolume != null && sourceVolume.profile != null)
                 {
                     int ignoreRaycastLayer = LayerMask.NameToLayer("Ignore Raycast");
-                    if (captureVolume == null)
+                    if (childVolume == null)
                     {
                         var child = new GameObject("ReFract_Volume");
                         child.transform.SetParent(captureCam.transform, false);
-                        child.layer = ignoreRaycastLayer;
-                        captureVolume = child.AddComponent<PostProcessVolume>();
+                        child.layer = ignoreRaycastLayer; 
+                        childVolume = child.AddComponent<PostProcessVolume>();
                         var col = child.AddComponent<BoxCollider>();
                         col.isTrigger = true;
                         col.size = Vector3.one * 0.01f;
-                        captureVolume.isGlobal = false;
+                        childVolume.isGlobal = false;
                     }
-                    captureVolume.enabled = true;
-                    captureVolume.profile = sourceVolume.profile;
-                    captureVolume.weight = sourceVolume.weight;
+                    
+                    // Ensure root volume is disabled if it exists, we only want the child
+                    if (rootVolume != null) rootVolume.enabled = false;
+
+                    childVolume.enabled = true;
+                    childVolume.profile = sourceVolume.profile;
+                    childVolume.weight = sourceVolume.weight;
 
                     var layer = captureCam.GetComponent<PostProcessLayer>();
                     if (layer != null)
@@ -134,10 +165,11 @@ public class Plugin : BaseUnityPlugin
                     }
                 }
             }
-            else if (captureVolume != null)
+            else
             {
-                // Disable the volume if this is a normal photo to avoid leaking effects
-                captureVolume.enabled = false;
+                // Disable volumes if this is a normal photo to avoid leaking effects from previous shots
+                if (rootVolume != null) rootVolume.enabled = false;
+                if (childVolume != null) childVolume.enabled = false;
             }
         }
     }
