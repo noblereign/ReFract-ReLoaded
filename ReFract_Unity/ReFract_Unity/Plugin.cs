@@ -14,6 +14,24 @@ using AmplifyOcclusion;
 
 namespace ReFract.Unity;
 
+/// <summary>
+/// This component is added to every camera managed by Re:Fract.
+/// Its sole purpose is to ensure that when the camera GameObject is destroyed,
+/// the "ReFract_Volume" child object is also explicitly destroyed. This prevents
+/// the volume from being orphaned and left in the scene root.
+/// </summary>
+public class ReFractVolumeTracker : MonoBehaviour
+{
+    void OnDestroy()
+    {
+        var child = transform.Find("ReFract_Volume");
+        if (child != null)
+        {
+            Destroy(child.gameObject);
+        }
+    }
+}
+
 [BepInPlugin("dog.glacier.ReFractUnity", "Re:Fract // Reloaded (for Unity)", "1.0.0")]
 public class Plugin : BaseUnityPlugin
 {
@@ -260,6 +278,12 @@ public class Plugin : BaseUnityPlugin
 
     private void EnsurePostProcessVolume(Camera camera)
     {
+        // Add our tracker component to the camera to handle cleanup on destruction
+        if (camera.gameObject.GetComponent<ReFractVolumeTracker>() == null)
+        {
+            camera.gameObject.AddComponent<ReFractVolumeTracker>();
+        }
+        
         int ignoreRaycastLayer = LayerMask.NameToLayer("Ignore Raycast");
 
         var layer = camera.gameObject.GetComponent<PostProcessLayer>();
@@ -343,14 +367,14 @@ public class Plugin : BaseUnityPlugin
     private void ApplyCommand(Camera camera, ReFractCommand command)
     {
         Debug.Log($"[Re:Fract] Searching for component '{command.ComponentName}' on camera '{camera.name}'");
-        
+
         object target = null;
         if (!TypeLookups.TryGetValue(command.ComponentName, out Type type))
         {
             Debug.LogWarning($"[Re:Fract] Unsupported Type {command.ComponentName}");
             return;
         }
-        
+
         if (typeof(PostProcessEffectSettings).IsAssignableFrom(type))
         {
             var volume = camera.GetComponentInChildren<PostProcessVolume>();
@@ -376,7 +400,7 @@ public class Plugin : BaseUnityPlugin
 
         if (target == null)
         {
-            Debug.LogWarning($"[Re:Fract] ERROR: Camera '{camera.name}' does not have component '{command.ComponentName}'");
+            Debug.LogWarning($"[Re:Fract] ERROR: Camera '{camera.name}' does not have or could not create component '{command.ComponentName}'");
             return;
         }
         Debug.Log($"[Re:Fract] Found target '{command.ComponentName}'");
@@ -384,6 +408,26 @@ public class Plugin : BaseUnityPlugin
         object value = GetValueFromCommand(command);
         var compType = target.GetType();
         
+        // If the parameter name ends with '!', treat it as a direct property access.
+        // This bypasses the default logic which prioritizes ParameterOverride fields.
+        if (command.ParameterName.EndsWith("!"))
+        {
+            string propName = command.ParameterName.Substring(0, command.ParameterName.Length - 1);
+            Debug.Log($"[Re:Fract] Attempting to set property '{propName}' on '{command.ComponentName} ({compType.FullName})' to value '{value}'");
+
+            var propSetter = Introspection.GetPropSetter(compType, propName);
+            if (propSetter != null)
+            {
+                propSetter(target, value);
+                Debug.Log($"[Re:Fract] SUCCESS: Set property '{propName}'.");
+            }
+            else
+            {
+                Debug.LogWarning($"[Re:Fract] ERROR: Could not find writable property '{propName}' on component '{command.ComponentName}'");
+            }
+            return;
+        }
+
         Debug.Log($"[Re:Fract] Attempting to set '{command.ParameterName}' on '{command.ComponentName} ({compType.FullName})' to value '{value}'");
 
         // Check for PostProcessing Parameters (ParameterOverride)
