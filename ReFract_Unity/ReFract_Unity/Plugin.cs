@@ -415,10 +415,10 @@ public class Plugin : BaseUnityPlugin
             string propName = command.ParameterName.Substring(0, command.ParameterName.Length - 1);
             Debug.Log($"[Re:Fract] Attempting to set property '{propName}' on '{command.ComponentName} ({compType.FullName})' to value '{value}'");
 
-            var propSetter = Introspection.GetPropSetter(compType, propName);
-            if (propSetter != null)
+            var directPropSetter = Introspection.GetPropSetter(compType, propName);
+            if (directPropSetter != null)
             {
-                propSetter(target, value);
+                directPropSetter(target, value);
                 Debug.Log($"[Re:Fract] SUCCESS: Set property '{propName}'.");
             }
             else
