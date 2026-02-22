@@ -435,6 +435,12 @@ public class Plugin : BaseUnityPlugin
                 }
             }
         }
+
+        if (volume.profile.TryGetSettings(out ColorGrading cg))
+        {
+            cg.gradingMode.value = GradingMode.HighDefinitionRange;
+            cg.gradingMode.overrideState = true;
+        }
     }
 
     private void ApplyCommand(Camera camera, ReFractCommand command)
