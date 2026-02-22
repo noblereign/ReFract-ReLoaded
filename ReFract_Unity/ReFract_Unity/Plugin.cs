@@ -23,12 +23,18 @@ namespace ReFract.Unity;
 /// </summary>
 public class ReFractVolumeTracker : MonoBehaviour
 {
+    public GameObject VolumeObject;
+
     void OnDestroy()
     {
-        var child = transform.Find("ReFract_Volume");
-        if (child != null)
+        if (VolumeObject != null)
         {
-            Destroy(child.gameObject);
+            Destroy(VolumeObject);
+        }
+        else
+        {
+            var child = transform.Find("ReFract_Volume");
+            if (child != null) Destroy(child.gameObject);
         }
     }
 }
@@ -292,6 +298,10 @@ public class Plugin : BaseUnityPlugin
         if (cameras.Count == 0)
         {
             Debug.LogWarning($"[Re:Fract] ERROR: All cached cameras for {command.RenderTextureId} were destroyed. Removing from cache.");
+            if (rtAsset?.Texture != null)
+            {
+                _removeAlphaCameras.Remove(rtAsset.Texture.GetInstanceID());
+            }
             _cameraCache.Remove(command.RenderTextureId);
             return;
         }
@@ -342,9 +352,10 @@ public class Plugin : BaseUnityPlugin
 
     private void EnsurePostProcessVolume(Camera camera)
     {
-        if (camera.gameObject.GetComponent<ReFractVolumeTracker>() == null)
+        var tracker = camera.gameObject.GetComponent<ReFractVolumeTracker>();
+        if (tracker == null)
         {
-            camera.gameObject.AddComponent<ReFractVolumeTracker>();
+            tracker = camera.gameObject.AddComponent<ReFractVolumeTracker>();
         }
         
         int ignoreRaycastLayer = LayerMask.NameToLayer("Ignore Raycast");
@@ -374,6 +385,8 @@ public class Plugin : BaseUnityPlugin
             go.layer = ignoreRaycastLayer;
             child = go.transform;
         }
+
+        tracker.VolumeObject = child.gameObject;
 
         var volume = child.GetComponent<PostProcessVolume>();
         if (volume == null)
@@ -579,27 +592,6 @@ public class Plugin : BaseUnityPlugin
                 return command.StringValue;
             default:
                 throw new ArgumentOutOfRangeException();
-        }
-    }
-
-    private static void SetOpaque(byte[] rawTex, TextureFormat format)
-    {
-        int start;
-        int inc;
-
-        switch (format)
-        {
-            case TextureFormat.RGBA32:
-                start = 3; inc = 4; break;
-            case TextureFormat.ARGB32:
-                start = 0; inc = 4; break;
-            default:
-                return;
-        }
-
-        for (int i = start; i < rawTex.Length; i += inc)
-        {
-            rawTex[i] = 255;
         }
     }
 
