@@ -1,7 +1,7 @@
 using System.Reflection;
 using System.Reflection.Emit;
 using UnityEngine;
-namespace ReFract;
+namespace ReFract.Unity;
 
 // The things I do to avoid reflection...
 // I'm sorry. - Github Copilot
@@ -11,6 +11,15 @@ public static class Introspection
     // Dictionaries to hold the type delegates, makes for easy lookups
     public static Dictionary<Type, Dictionary<string, RefAction<object, object>>> _cachedSetters = new Dictionary<Type, Dictionary<string, RefAction<object, object>>>();
     public static Dictionary<Type, Dictionary<string, Action<object, object>>> _cachedPropSetters = new Dictionary<Type, Dictionary<string, Action<object, object>>>();
+
+    private static void DoDebugLog(string input)
+    {
+        if (Plugin.BoundConfig.debugLogging.Value)
+        {
+            Debug.Log(input);
+        }
+    }
+
     public static RefAction<object, object>? GetFieldSetter(Type obj, string fieldName, Func<Type, FieldInfo, ILGenerator, bool>? ilOverride = null)
     {
         // Try to return an existing delegate, otherwise create one
@@ -22,17 +31,17 @@ public static class Introspection
         {
             if (obj == null || fieldName == null || fieldName.Length == 0)
                 return null;
-            Console.WriteLine("Introspection : Getting field");
+            DoDebugLog("Introspection : Getting field");
             // Get the target field
             FieldInfo field = obj.GetField(fieldName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-            Console.WriteLine("Introspection : Field is " + (field == null ? "null" : "not null"));
+            DoDebugLog("Introspection : Field is " + (field == null ? "null" : "not null"));
             if (field == null)
                 return null;
 
-            Console.WriteLine("Introspection : Field is " + field.Name);
+            DoDebugLog("Introspection : Field is " + field.Name);
             // Get the delegate that acts as a field accessor the target field
             var del = GetDynamicMethod(obj, field, ilOverride);
-            Console.WriteLine("Introspection : Delegate is " + (del == null ? "null" : "not null & " + del.GetType().ToString()));
+            DoDebugLog("Introspection : Delegate is " + (del == null ? "null" : "not null & " + del.GetType().ToString()));
 
             if (del == null)
                 return null;
@@ -42,7 +51,7 @@ public static class Introspection
                 _cachedSetters.Add(obj, new Dictionary<string, RefAction<object, object>>());
 
             _cachedSetters[obj].Add(fieldName, del);
-            Console.WriteLine("Introspection : Added delegate to dictionary at " + obj.ToString() + "." + fieldName);
+            DoDebugLog("Introspection : Added delegate to dictionary at " + obj.ToString() + "." + fieldName);
             return del;
         }
     }
@@ -61,17 +70,17 @@ public static class Introspection
             if (obj == null || propName == null || propName.Length == 0)
                 return null;
 
-            Console.WriteLine($"Introspection : Getting property of {obj.ToString()} with name {propName}");
+            DoDebugLog($"Introspection : Getting property of {obj.ToString()} with name {propName}");
             // Get the target property
             PropertyInfo prop = obj.GetProperty(propName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-            Console.WriteLine("Introspection : Property is " + (prop == null ? "null" : "not null"));
+            DoDebugLog("Introspection : Property is " + (prop == null ? "null" : "not null"));
             if (prop == null)
                 return null;
 
-            Console.WriteLine("Introspection : Property is " + prop.Name);
+            DoDebugLog("Introspection : Property is " + prop.Name);
             // Get the delegate that acts as a property accessor the target property
             var del = GetDynamicPropMethod(obj, prop);
-            Console.WriteLine("Introspection : Delegate is " + (del == null ? "null" : "not null & " + del.GetType().ToString()));
+            DoDebugLog("Introspection : Delegate is " + (del == null ? "null" : "not null & " + del.GetType().ToString()));
 
             if (del == null)
                 return null;
@@ -81,7 +90,7 @@ public static class Introspection
                 _cachedPropSetters.Add(obj, new Dictionary<string, Action<object, object>>());
 
             _cachedPropSetters[obj].Add(propName, del);
-            Console.WriteLine("Introspection : Added delegate to dictionary at " + obj.ToString() + "." + propName);
+            DoDebugLog("Introspection : Added delegate to dictionary at " + obj.ToString() + "." + propName);
             return del;
         }
     }
@@ -135,12 +144,12 @@ public static class Introspection
 
             // If the type doesn't match, print out a message and return, doing nothing.
             il.MarkLabel(typeFailed);
-            il.Emit(OpCodes.Ldstr, $"[Re:Fract] Wrong type for field \"{field.Name}\" which takes \"{field.FieldType}\"");
+            il.Emit(OpCodes.Ldstr, $"[Re:Fract] Introspection : Wrong type for field \"{field.Name}\" which takes \"{field.FieldType}\"");
             il.Emit(OpCodes.Call, typeof(Debug).GetMethod("LogWarning", new Type[] { typeof(string) }));
             il.Emit(OpCodes.Ret);
-            Console.WriteLine("Introspection : Generated dynamic method with default IL");
+            DoDebugLog("Introspection : Generated dynamic method with default IL");
         }
-        Console.WriteLine("Introspection : Creation of DynamicMethod was successful for " + obj.ToString() + "." + field.Name);
+        DoDebugLog("Introspection : Creation of DynamicMethod was successful for " + obj.ToString() + "." + field.Name);
         return (RefAction<object, object>)method.CreateDelegate(typeof(RefAction<,>).MakeGenericType(typeof(object), typeof(object)));
     }
 
@@ -164,7 +173,7 @@ public static class Introspection
         il.Emit(OpCodes.Call, method);
         il.Emit(OpCodes.Ret);
 
-        Console.WriteLine("Introspection : Created delegate for property " + prop.Name);
+        DoDebugLog("Introspection : Created delegate for property " + prop.Name);
 
         var ret = (Action<object, object>)del.CreateDelegate(typeof(Action<object, object>));
         // Add the delegate to the dictionary

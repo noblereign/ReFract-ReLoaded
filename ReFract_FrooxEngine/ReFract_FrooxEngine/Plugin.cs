@@ -9,6 +9,7 @@ using HarmonyLib;
 using InterprocessLib;
 using ReFract.Shared;
 using System.Collections;
+using System.Diagnostics;
 using System.Reflection;
 using System.Xml.Linq;
 
@@ -21,6 +22,7 @@ namespace ReFract;
 public class Plugin : BasePlugin
 {
     internal static new ManualLogSource Log = null!;
+    internal static ReFractConfig BoundConfig { get; private set; } = null!;
     public static Messenger? _messenger;
 
     public static string DynVarKeyString => "Re.Fract_";
@@ -31,8 +33,12 @@ public class Plugin : BasePlugin
     {
         Log = base.Log;
         ResoniteHooks.OnEngineReady += OnEngineReady;
+        Log.LogInfo($"Plugin {PluginMetadata.GUID} is binding configs");
+        BoundConfig = new ReFractConfig(base.Config);
         Log.LogInfo($"Plugin {PluginMetadata.GUID} is preparing interprocess");
         _messenger = new Messenger("dog.glacier.ReFract", [typeof(ReFractCommand)]);
+        _messenger.SyncConfigEntry(BoundConfig.debugLogging);
+        _messenger.SyncConfigEntry(BoundConfig.forceRemoveAlpha);
         Log.LogInfo($"Plugin {PluginMetadata.GUID} is loaded!");
     }
 
@@ -62,6 +68,14 @@ public class Plugin : BasePlugin
         catch (Exception ex)
         {
             Log.LogError($"Failed to install patches: {ex}");
+        }
+    }
+
+    private static void DoDebugLog(string input)
+    {
+        if (BoundConfig.debugLogging.Value)
+        {
+            Log.LogDebug(input);
         }
     }
 
@@ -99,12 +113,12 @@ public class Plugin : BasePlugin
                     var handler = handlerField.GetValue(__instance);
                     dynvarCamSetter.Invoke(null, new object[] { __instance, handler });
                 };
-                Log.LogDebug($"Re:Fract: Found DynamicValueVariable {__instance.Name} ({__instance.WorkerType} @ {__instance.ReferenceID})");
+                //DoDebugLog(($"Re:Fract: Found DynamicValueVariable {__instance.Name} ({__instance.WorkerType} @ {__instance.ReferenceID})");
             }
             // Specifically also check if it's a camera variable
             else if (t == typeof(DynamicReferenceVariable<Camera>))
             {
-                Log.LogDebug($"Re:Fract: Found Camera Variable {__instance.Name} ({__instance.WorkerType} @ {__instance.ReferenceID})");
+                DoDebugLog(($"Re:Fract: Found Camera Variable {__instance.Name} ({__instance.WorkerType} @ {__instance.ReferenceID})");
                 // Get the Reference fieldinfo
                 FieldInfo? field = t.GetField("Reference", BindingFlags.Instance | BindingFlags.Public);
                 if (field == null) return;
@@ -115,7 +129,7 @@ public class Plugin : BasePlugin
                 // Store the name of the variable for later
                 string? CamName = camVar?.VariableName.Value;
 
-                Log.LogDebug($"Re:Fract: {__instance.Name} ({__instance.ReferenceID}) camera name: {CamName} ");
+                DoDebugLog(($"Re:Fract: {__instance.Name} ({__instance.ReferenceID}) camera name: {CamName} ");
 
                 // I *should* be okay not unsubbing these events since the object they're attached to gets destroyed (and thus the object listening to these events)
                 Reference.Changed += (IChangeable c) => {
@@ -130,7 +144,7 @@ public class Plugin : BasePlugin
                     {
                         if (c2 is Sync<bool> active && refVar != null && refVar.Target != null && camVar != null)
                         {
-                            Log.LogDebug($"Re:Fract : Camera \"{Name}\" is {(active ? "active" : "inactive")}!");
+                            DoDebugLog(($"Re:Fract : Camera \"{Name}\" is {(active ? "active" : "inactive")}!");
                             if (active)
                             {
                                 Engine.Current.WorldManager.FocusedWorld.RunInUpdates(2, () => CameraHelperFunctions.RefreshCameraState(camVar, refVar.Target as Camera));
@@ -138,7 +152,7 @@ public class Plugin : BasePlugin
                         }
                         else if (c2 is Sync<bool> active2)
                         {
-                            Log.LogDebug($"Re:Fract : Camera \"{Name}\" is no longer valid, unsubscribing!");
+                            DoDebugLog(($"Re:Fract : Camera \"{Name}\" is no longer valid, unsubscribing!");
                             active2.Changed -= handler;
                         }
                     };
@@ -146,7 +160,7 @@ public class Plugin : BasePlugin
                     if (camVar != null && Name != null && Name.StartsWith(DynVarCamKeyString) && refVar != null && refVar.Target != null)
                     {
                         CameraHelperFunctions.RefreshCameraState(camVar, refVar.Target as Camera);
-                        Log.LogDebug($"Re:Fract : Camera \"{Name}\" updated!");
+                        DoDebugLog(($"Re:Fract : Camera \"{Name}\" updated!");
 
                         // Just to be extra safe ;) (Though I am under no illusions that juggling events is uh... not great)
                         Sync<bool> cameraSlotActive = refVar.Target.Slot.ActiveSelf_Field;
@@ -160,14 +174,14 @@ public class Plugin : BasePlugin
                         if (del == null || !del.HasSubscriber(handler))
                         {
                             refVar.Target.Slot.ActiveSelf_Field.Changed += handler;
-                            Log.LogDebug($"Re:Fract : Camera \"{Name}\" subscribed to slot active state!");
+                            DoDebugLog(($"Re:Fract : Camera \"{Name}\" subscribed to slot active state!");
                         }
 
                         del = fi.GetValue(refVar.Target.Postprocessing) as Delegate;
                         if (del == null || !del.HasSubscriber(handler))
                         {
                             refVar.Target.Postprocessing.Changed += handler;
-                            Log.LogDebug($"Re:Fract : Camera \"{Name}\" subscribed to postprocessing state!");
+                            DoDebugLog(($"Re:Fract : Camera \"{Name}\" subscribed to postprocessing state!");
                         }
                     }
                 };
@@ -179,7 +193,7 @@ public class Plugin : BasePlugin
                     {
                         // Wait for any variable spaces and such to initialize
                         __instance.World.RunInUpdates(3, () => {
-                            Log.LogDebug("Re:Fract : Starting " + splitName[2]);
+                            DoDebugLog(("Re:Fract : Starting " + splitName[2]);
                             CameraHelperFunctions.RefreshCameraState(camVar, camVar.Reference.Target);
                             camVar.Reference.SyncElementChanged(camVar.Reference);
                         });
@@ -193,7 +207,7 @@ public class Plugin : BasePlugin
         {
             string Name = __instance.VariableName;
 
-            //Log.LogDebug("Re:Fract: DynamicVariableBase_Patch: " + Name + ": " + typeof(T).Name);
+            //DoDebugLog(("Re:Fract: DynamicVariableBase_Patch: " + Name + ": " + typeof(T).Name);
             if (Name != null && Name.StartsWith(DynVarKeyString))
             {
                 T Value = __instance.DynamicValue;

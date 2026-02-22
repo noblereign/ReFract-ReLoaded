@@ -43,6 +43,7 @@ public class ReFractVolumeTracker : MonoBehaviour
 [BepInPlugin("dog.glacier.ReFractUnity", "Re:Fract // Reloaded (for Unity)", "1.0.0")]
 public class Plugin : BaseUnityPlugin
 {
+    internal static ReFractConfig BoundConfig { get; private set; } = null!;
     private Messenger _msg;
     private static readonly Dictionary<int, List<UnityEngine.Camera>> _cameraCache = new();
     private static readonly Dictionary<int, bool> _removeAlphaCameras = new();
@@ -67,19 +68,16 @@ public class Plugin : BaseUnityPlugin
 
 	void Awake()
 	{
+        Debug.Log($"[Re:Fract] Binding configs");
+        BoundConfig = new ReFractConfig(base.Config);
+        Debug.Log($"[Re:Fract] Setting up interprocess");
         _msg = new Messenger("dog.glacier.ReFract", [typeof(ReFractCommand)]);
-        try
-        {
-            _msg.ReceiveObject<ReFractCommand>("SetVariable", HandleSetVariable);
-            Debug.Log($"[Re:Fract] Receiver registered!");
-
-            Harmony harmony = new Harmony("dog.glacier.ReFractUnity");
-            harmony.PatchAll();
-        }
-        catch (TypeLoadException ex)
-        {
-            Debug.Log($"[Re:Fract] Failed to register receiver. This is likely a DLL version mismatch: {ex}");
-        }
+        _msg.ReceiveObject<ReFractCommand>("SetVariable", HandleSetVariable);
+        _msg.SyncConfigEntry(BoundConfig.debugLogging);
+        _msg.SyncConfigEntry(BoundConfig.forceRemoveAlpha);
+        Debug.Log($"[Re:Fract] Running harmony patches!");
+        Harmony harmony = new Harmony("dog.glacier.ReFractUnity");
+        harmony.PatchAll();
     }
 
     void Update()
@@ -87,6 +85,14 @@ public class Plugin : BaseUnityPlugin
         while (_mainThreadQueue.TryDequeue(out var action))
         {
             action();
+        }
+    }
+
+    private static void DoDebugLog(string input)
+    {
+        if (BoundConfig.debugLogging.Value)
+        {
+            Debug.Log(input);
         }
     }
 
@@ -154,12 +160,14 @@ public class Plugin : BaseUnityPlugin
         }
 
         [HarmonyPrefix]
-        public static void Prefix(CameraRenderTask task)
+        public static void Prefix(CameraRenderTask task, out Camera __state)
         {
+            __state = null;
             var captureCam = GetCaptureCamera(task);
             if (captureCam == null) return;
             
             var sourceCam = FindSourceCamera(task);
+            __state = sourceCam;
 
             var rootVolume = captureCam.gameObject.GetComponent<PostProcessVolume>();
             var childTransform = captureCam.transform.Find("ReFract_Volume");
@@ -167,7 +175,7 @@ public class Plugin : BaseUnityPlugin
 
             if (sourceCam != null)
             {
-                Debug.Log($"[Re:Fract] Syncing PostProcess from '{sourceCam.name}' to Capture Camera.");
+                Debug.Log($"[Re:Fract] Syncing PostProcess from '{sourceCam.GetInstanceID()}' to Capture Camera.");
                 var sourceVolume = sourceCam.GetComponentInChildren<PostProcessVolume>();
                 if (sourceVolume != null && sourceVolume.profile != null)
                 {
@@ -211,12 +219,12 @@ public class Plugin : BaseUnityPlugin
         }
         
         [HarmonyPostfix]
-        public static void Postfix(CameraRenderTask task)
+        public static void Postfix(CameraRenderTask task, Camera __state)
         {
-            var sourceCam = FindSourceCamera(task);
+            var sourceCam = __state;
             if (sourceCam == null || sourceCam.targetTexture == null) return;
 
-            if (_removeAlphaCameras.TryGetValue(sourceCam.targetTexture.GetInstanceID(), out bool removeAlpha) && removeAlpha)
+            if ((_removeAlphaCameras.TryGetValue(sourceCam.targetTexture.GetInstanceID(), out bool removeAlpha) && removeAlpha) || BoundConfig.forceRemoveAlpha.Value)
             {
                 try
                 {
@@ -255,7 +263,7 @@ public class Plugin : BaseUnityPlugin
 
     private void HandleSetVariableInternal(ReFractCommand command)
     {
-        Debug.Log($"[Re:Fract] Received command for RT ID: {command.RenderTextureId}");
+        DoDebugLog($"[Re:Fract] Received command for RT ID: {command.RenderTextureId}");
 
         if (command.RenderTextureId == 0)
         {
@@ -268,13 +276,13 @@ public class Plugin : BaseUnityPlugin
         if (rtAsset?.Texture != null && command.IsRemoveAlphaCommand)
         {
             int unityId = rtAsset.Texture.GetInstanceID();
-            Debug.Log($"[Re:Fract] Setting RemoveAlpha for Unity Texture {unityId} (Resonite {command.RenderTextureId}) to {command.BoolValue}");
+            DoDebugLog($"[Re:Fract] Setting RemoveAlpha for Unity Texture {unityId} (Resonite {command.RenderTextureId}) to {command.BoolValue}");
             _removeAlphaCameras[unityId] = command.BoolValue;
         }
 
         if (!_cameraCache.TryGetValue(command.RenderTextureId, out var cameras) || cameras == null)
         {
-            Debug.Log($"[Re:Fract] Camera for {command.RenderTextureId} not in cache or is null. Searching...");
+            DoDebugLog($"[Re:Fract] Camera for {command.RenderTextureId} not in cache or is null. Searching...");
             
             if (rtAsset?.Texture == null)
             {
@@ -286,7 +294,7 @@ public class Plugin : BaseUnityPlugin
                 }
                 return;
             }
-            Debug.Log($"[Re:Fract] Found render texture asset for {command.RenderTextureId}");
+            DoDebugLog($"[Re:Fract] Found render texture asset for {command.RenderTextureId}");
 
             cameras = FindCamerasRenderingTo(rtAsset.Texture);
             if (cameras.Count == 0)
@@ -296,11 +304,11 @@ public class Plugin : BaseUnityPlugin
                 return;
             }
             _cameraCache[command.RenderTextureId] = cameras;
-            Debug.Log($"[Re:Fract] Found and cached {cameras.Count} cameras for ID {command.RenderTextureId}");
+            DoDebugLog($"[Re:Fract] Found and cached {cameras.Count} cameras for ID {command.RenderTextureId}");
         }
         else
         {
-            Debug.Log($"[Re:Fract] Using cached cameras for ID {command.RenderTextureId}");
+            DoDebugLog($"[Re:Fract] Using cached cameras for ID {command.RenderTextureId}");
             // Ensure alpha flag is set if we used cache (in case rtAsset lookup failed above but cache exists)
             if (command.IsRemoveAlphaCommand && cameras.Count > 0 && cameras[0].targetTexture != null)
             {
@@ -349,7 +357,7 @@ public class Plugin : BaseUnityPlugin
         if (cameras.Count > 0)
         {
             _cameraCache[command.RenderTextureId] = cameras;
-            Debug.Log($"[Re:Fract] Found {cameras.Count} cameras after waiting.");
+            DoDebugLog($"[Re:Fract] Found {cameras.Count} cameras after waiting.");
             foreach (var camera in cameras)
             {
                 EnsurePostProcessVolume(camera);
@@ -382,7 +390,7 @@ public class Plugin : BaseUnityPlugin
             int volumeLayerMask = 1 << ignoreRaycastLayer;
             if ((layer.volumeLayer & volumeLayerMask) == 0)
             {
-                Debug.Log($"[Re:Fract] PostProcessLayer volumeLayer mask mismatch. Adding layer {ignoreRaycastLayer} (Ignore Raycast).");
+                DoDebugLog($"[Re:Fract] PostProcessLayer volumeLayer mask mismatch. Adding layer {ignoreRaycastLayer} (Ignore Raycast).");
                 layer.volumeLayer |= volumeLayerMask;
             }
         }
@@ -406,7 +414,7 @@ public class Plugin : BaseUnityPlugin
         var volume = child.GetComponent<PostProcessVolume>();
         if (volume == null)
         {
-            Debug.Log($"[Re:Fract] Creating PostProcessVolume on child of '{camera.name}'.");
+            DoDebugLog($"[Re:Fract] Creating PostProcessVolume on child of '{camera.name}'.");
             volume = child.gameObject.AddComponent<PostProcessVolume>();
         }
 
@@ -422,7 +430,7 @@ public class Plugin : BaseUnityPlugin
         string uniqueName = $"ReFract_Profile_{camera.GetInstanceID()}";
         if (volume.profile == null)
         {
-            Debug.Log($"[Re:Fract] PostProcessVolume on '{camera.name}' has no profile. Creating one and adding all settings.");
+            DoDebugLog($"[Re:Fract] PostProcessVolume on '{camera.name}' has no profile. Creating one and adding all settings.");
             var newProfile = ScriptableObject.CreateInstance<PostProcessProfile>();
             newProfile.name = uniqueName;
             volume.profile = newProfile;
@@ -430,14 +438,14 @@ public class Plugin : BaseUnityPlugin
             {
                 if (typeof(PostProcessEffectSettings).IsAssignableFrom(type))
                 {
-                    Debug.Log($"[Re:Fract] Adding setting '{type.Name}' to new profile.");
+                    DoDebugLog($"[Re:Fract] Adding setting '{type.Name}' to new profile.");
                     volume.profile.AddSettings(type);
                 }
             }
         }
         else if (volume.profile.name != uniqueName)
         {
-            Debug.Log($"[Re:Fract] Ensuring unique profile for '{camera.name}'.");
+            DoDebugLog($"[Re:Fract] Ensuring unique profile for '{camera.name}'.");
             var newProfile = Instantiate(volume.profile);
             newProfile.name = uniqueName;
             volume.profile = newProfile;
@@ -460,7 +468,7 @@ public class Plugin : BaseUnityPlugin
 
     private void ApplyCommand(Camera camera, ReFractCommand command)
     {
-        Debug.Log($"[Re:Fract] Searching for component '{command.ComponentName}' on camera '{camera.name}'");
+        DoDebugLog($"[Re:Fract] Searching for component '{command.ComponentName}' on camera '{camera.name}'");
 
         object target = null;
         if (!TypeLookups.TryGetValue(command.ComponentName, out Type type))
@@ -496,7 +504,7 @@ public class Plugin : BaseUnityPlugin
             Debug.LogWarning($"[Re:Fract] ERROR: Camera '{camera.name}' does not have or could not create component '{command.ComponentName}'");
             return;
         }
-        Debug.Log($"[Re:Fract] Found target '{command.ComponentName}'");
+        DoDebugLog($"[Re:Fract] Found target '{command.ComponentName}'");
 
         object value = GetValueFromCommand(command);
         var compType = target.GetType();
@@ -504,13 +512,13 @@ public class Plugin : BaseUnityPlugin
         if (command.ParameterName.EndsWith("!"))
         {
             string propName = command.ParameterName.Substring(0, command.ParameterName.Length - 1);
-            Debug.Log($"[Re:Fract] Attempting to set property '{propName}' on '{command.ComponentName} ({compType.FullName})' to value '{value}'");
+            DoDebugLog($"[Re:Fract] Attempting to set property '{propName}' on '{command.ComponentName} ({compType.FullName})' to value '{value}'");
 
             var directPropSetter = Introspection.GetPropSetter(compType, propName);
             if (directPropSetter != null)
             {
                 directPropSetter(target, value);
-                Debug.Log($"[Re:Fract] SUCCESS: Set property '{propName}'.");
+                DoDebugLog($"[Re:Fract] SUCCESS: Set property '{propName}'.");
             }
             else
             {
@@ -519,7 +527,7 @@ public class Plugin : BaseUnityPlugin
             return;
         }
 
-        Debug.Log($"[Re:Fract] Attempting to set '{command.ParameterName}' on '{command.ComponentName} ({compType.FullName})' to value '{value}'");
+        DoDebugLog($"[Re:Fract] Attempting to set '{command.ParameterName}' on '{command.ComponentName} ({compType.FullName})' to value '{value}'");
 
         var field = compType.GetField(command.ParameterName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
         if (field != null && typeof(ParameterOverride).IsAssignableFrom(field.FieldType))
@@ -536,7 +544,7 @@ public class Plugin : BaseUnityPlugin
                     try
                     {
                         valueField.SetValue(fieldValue, value);
-                        Debug.Log($"[Re:Fract] Set 'value' field on ParameterOverride '{command.ParameterName}'.");
+                        DoDebugLog($"[Re:Fract] Set 'value' field on ParameterOverride '{command.ParameterName}'.");
                         valueSet = true;
                     }
                     catch (Exception ex) { Debug.LogWarning($"[Re:Fract] Failed to set ParameterOverride field value: {ex}"); }
@@ -550,7 +558,7 @@ public class Plugin : BaseUnityPlugin
                         try
                         {
                             valueProp.SetValue(fieldValue, value);
-                            Debug.Log($"[Re:Fract] Set 'value' property on ParameterOverride '{command.ParameterName}'.");
+                            DoDebugLog($"[Re:Fract] Set 'value' property on ParameterOverride '{command.ParameterName}'.");
                             valueSet = true;
                         }
                         catch (Exception ex) { Debug.LogWarning($"[Re:Fract] Failed to set ParameterOverride property value: {ex}"); }
@@ -563,7 +571,7 @@ public class Plugin : BaseUnityPlugin
                     if (overrideStateField != null)
                     {
                         overrideStateField.SetValue(fieldValue, true);
-                        Debug.Log($"[Re:Fract] SUCCESS: Activated override for '{command.ParameterName}'.");
+                        DoDebugLog($"[Re:Fract] SUCCESS: Activated override for '{command.ParameterName}'.");
                     }
                     else
                     {
@@ -578,7 +586,7 @@ public class Plugin : BaseUnityPlugin
         if (propSetter != null)
         {
             propSetter(target, value);
-            Debug.Log($"[Re:Fract] SUCCESS: Set property '{command.ParameterName}'.");
+            DoDebugLog($"[Re:Fract] SUCCESS: Set property '{command.ParameterName}'.");
             return;
         }
 
@@ -586,7 +594,7 @@ public class Plugin : BaseUnityPlugin
         if (fieldSetter != null)
         {
             fieldSetter(ref target, value);
-            Debug.Log($"[Re:Fract] SUCCESS: Set field '{command.ParameterName}'.");
+            DoDebugLog($"[Re:Fract] SUCCESS: Set field '{command.ParameterName}'.");
             return;
         }
 
@@ -618,13 +626,13 @@ public class Plugin : BaseUnityPlugin
 
     private static List<UnityEngine.Camera> FindCamerasRenderingTo(RenderTexture target)
     {
-        Debug.Log($"[Re:Fract] Searching for RenderTexture {(target ? target.name : "NULL TARGET")} @ {(target ? target.GetInstanceID() : "N/A")}");
+        DoDebugLog($"[Re:Fract] Searching for RenderTexture {(target ? target.name : "NULL TARGET")} @ {(target ? target.GetInstanceID() : "N/A")}");
         Camera[] allCameras = FindObjectsOfType<Camera>();
         List<UnityEngine.Camera> foundCameras = new List<UnityEngine.Camera>();
 
         foreach (Camera cam in allCameras)
         {
-            Debug.Log($"[Re:Fract] Camera {cam.name} @ {cam.GetInstanceID()} --> {(cam.targetTexture ? cam.targetTexture.name : "NULL TARGET")} @ {(cam.targetTexture ? cam.targetTexture.GetInstanceID() : "N/A")}...");
+            DoDebugLog($"[Re:Fract] Camera {cam.name} @ {cam.GetInstanceID()} --> {(cam.targetTexture ? cam.targetTexture.name : "NULL TARGET")} @ {(cam.targetTexture ? cam.targetTexture.GetInstanceID() : "N/A")}...");
             if (cam.targetTexture == target)
             {
                 foundCameras.Add(cam);

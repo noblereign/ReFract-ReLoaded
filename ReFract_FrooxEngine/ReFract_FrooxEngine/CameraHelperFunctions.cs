@@ -8,6 +8,9 @@ namespace ReFract
 {
     public static class CameraHelperFunctions
     {
+        private static readonly FieldInfo _dynamicValuesField = typeof(DynamicVariableSpace).GetField("_dynamicValues", BindingFlags.Instance | BindingFlags.NonPublic);
+        private static readonly FieldInfo _handlerField = typeof(DynamicReferenceVariable<Camera>).BaseType.GetField("handler", BindingFlags.Instance | BindingFlags.NonPublic);
+
         public static void SetCameraVariable<T>(DynamicVariableSpace space, string camName, string componentName, string paramName, T value)
         {
             if (Plugin._messenger == null) return;
@@ -128,16 +131,14 @@ namespace ReFract
                 ValueType = ReFractCommandValueType.Bool
             };
             
-            Plugin.Log.LogInfo($"Re:Fract: Sending RemoveAlpha command for {camName}, value: {enabled}");
+            Plugin.Log.LogDebug($"Re:Fract: Sending RemoveAlpha command for {camName}, value: {enabled}");
             Plugin._messenger.SendObject("SetVariable", command);
         }
 
         public static void SetRemoveAlphaGlobal(DynamicVariableSpace space, bool enabled)
         {
-            var spaceDictField = typeof(DynamicVariableSpace).GetField("_dynamicValues", BindingFlags.Instance | BindingFlags.NonPublic);
-            if (spaceDictField == null) return;
-
-            if (spaceDictField.GetValue(space) is not System.Collections.IDictionary spaceDict) return;
+            if (_dynamicValuesField == null) return;
+            if (_dynamicValuesField.GetValue(space) is not System.Collections.IDictionary spaceDict) return;
 
             foreach (var key in spaceDict.Keys)
             {
@@ -159,25 +160,19 @@ namespace ReFract
             string[] splitName = name.Split('_');
 
             // We need to use reflection to get the dynamic variable space handler
-            var handlerField = camVar.GetType().BaseType.GetField("handler", BindingFlags.Instance | BindingFlags.NonPublic);
-            if (handlerField == null)
+            if (_handlerField == null)
             {
                 Plugin.Log.LogWarning("Re:Fract: Could not find handler field on DynamicReferenceVariable.");
                 return;
             }
 
-            var handler = handlerField.GetValue(camVar) as DynamicVariableHandler<Camera>;
+            var handler = _handlerField.GetValue(camVar) as DynamicVariableHandler<Camera>;
             if (handler?.CurrentSpace == null) return;
 
             // Now we get the dictionary of all dynamic values in the space
-            var spaceDictField = typeof(DynamicVariableSpace).GetField("_dynamicValues", BindingFlags.Instance | BindingFlags.NonPublic);
-            if (spaceDictField == null)
-            {
-                Plugin.Log.LogWarning("Re:Fract: Could not find _dynamicValues field on DynamicVariableSpace.");
-                return;
-            }
+            if (_dynamicValuesField == null) return;
 
-            if (spaceDictField.GetValue(handler.CurrentSpace) is not System.Collections.IDictionary spaceDict) return;
+            if (_dynamicValuesField.GetValue(handler.CurrentSpace) is not System.Collections.IDictionary spaceDict) return;
 
             // Iterate over all the dynamic variables and re-apply the ones for our camera
             foreach (var key in spaceDict.Keys)
@@ -197,7 +192,7 @@ namespace ReFract
                         var value = spaceDict[key]?.GetType().GetProperty("Value")?.GetValue(spaceDict[key]);
                         if (value == null) continue;
 
-                        Plugin.Log.LogMessage($"Re:Fract: Refreshing '{keyName}' for camera '{camName}'");
+                        Plugin.Log.LogDebug($"Re:Fract: Refreshing '{keyName}' for camera '{camName}'");
 
                         var method = typeof(CameraHelperFunctions).GetMethod("SetCameraVariable");
                         if (method == null) continue;
@@ -211,7 +206,7 @@ namespace ReFract
                         var value = spaceDict[key]?.GetType().GetProperty("Value")?.GetValue(spaceDict[key]);
                         if (value is bool enabled)
                         {
-                            Plugin.Log.LogMessage($"Re:Fract: Refreshing 'RemoveAlpha' for camera '{camName}'");
+                            Plugin.Log.LogDebug($"Re:Fract: Refreshing 'RemoveAlpha' for camera '{camName}'");
                             SetRemoveAlpha(handler.CurrentSpace, camName, enabled);
                         }
                     }
@@ -221,7 +216,7 @@ namespace ReFract
                         var value = spaceDict[key]?.GetType().GetProperty("Value")?.GetValue(spaceDict[key]);
                         if (value is bool enabled)
                         {
-                            Plugin.Log.LogMessage($"Re:Fract: Refreshing global 'RemoveAlpha' for camera '{camName}'");
+                            Plugin.Log.LogDebug($"Re:Fract: Refreshing global 'RemoveAlpha' for camera '{camName}'");
                             SetRemoveAlpha(handler.CurrentSpace, camName, enabled);
                         }
                     }
