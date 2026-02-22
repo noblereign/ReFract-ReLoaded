@@ -210,6 +210,19 @@ public class Plugin : BasePlugin
                     string paramName = camParams[3];
                     CameraHelperFunctions.SetCameraVariable(Space, camName, componentName, paramName, Value);
                 }
+                else if (camParams.Length == 3 && camParams[2] == "RemoveAlpha" && Value is bool enabled)
+                {
+                    string camName = camParams[1];
+                    CameraHelperFunctions.SetRemoveAlpha(Space, camName, enabled);
+                }
+                else if (camParams.Length == 2 && camParams[1] == "RemoveAlpha" && Value is bool enabledGlobal)
+                {
+                    CameraHelperFunctions.SetRemoveAlphaGlobal(Space, enabledGlobal);
+                }
+                else
+                {
+                    Plugin.Log.LogWarning($"Re:Fract: Unrecognized variable format: {Name}. Expected Re.Fract_<CamName>_<Component>_<Param> or Re.Fract_<CamName>_RemoveAlpha");
+                }
             }
         }
     }

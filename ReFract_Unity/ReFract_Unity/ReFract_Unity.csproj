@@ -48,6 +48,7 @@
       <Private>False</Private>
     </Reference>
   </ItemGroup>
+
   <ItemGroup>
     <Reference Include="0Harmony">
       <HintPath>$(GamePath)Renderer\BepInEx\core\0Harmony.dll</HintPath>
@@ -72,6 +73,9 @@
     </Reference>
     <Reference Include="UnityEngine.PhysicsModule">
       <HintPath>$(GamePath)Renderer\Renderite.Renderer_Data\Managed\UnityEngine.PhysicsModule.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Memory">
+      <HintPath>$(GamePath)Renderer\Renderite.Renderer_Data\Managed\System.Memory.dll</HintPath>
     </Reference>
   </ItemGroup>
 

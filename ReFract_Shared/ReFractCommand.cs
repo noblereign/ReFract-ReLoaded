@@ -35,6 +35,7 @@ namespace ReFract.Shared
     public class ReFractCommand : RendererCommand
     {
         public int RenderTextureId;
+        public bool IsRemoveAlphaCommand; // New flag
         public string CameraName = "";
         public string ComponentName = "";
         public string ParameterName = "";
@@ -50,6 +51,7 @@ namespace ReFract.Shared
         public override void Pack(ref MemoryPacker packer)
         {
             packer.Write(RenderTextureId);
+            packer.Write(IsRemoveAlphaCommand); // Packing the new flag
             packer.Write(CameraName);
             packer.Write(ComponentName);
             packer.Write(ParameterName);
@@ -91,6 +93,7 @@ namespace ReFract.Shared
         public override void Unpack(ref MemoryUnpacker unpacker)
         {
             unpacker.Read(ref RenderTextureId);
+            unpacker.Read(ref IsRemoveAlphaCommand); // Unpacking the new flag
             unpacker.Read(ref CameraName);
             unpacker.Read(ref ComponentName);
             unpacker.Read(ref ParameterName);

@@ -87,6 +87,71 @@ namespace ReFract
             Plugin._messenger.SendObject("SetVariable", command);
         }
 
+        public static void SetRemoveAlpha(DynamicVariableSpace space, string camName, bool enabled)
+        {
+            if (Plugin._messenger == null) return;
+            if (space == null) return;
+
+            // Get the camera's render texture asset ID
+            if (!space.TryReadValue(Plugin.DynVarCamKeyString + camName, out Camera cameraRef))
+            {
+                Plugin.Log.LogWarning($"Re:Fract: Could not find camera variable for {camName} to set RemoveAlpha");
+                return;
+            }
+
+            var camera = cameraRef;
+            if (camera == null)
+            {
+                Plugin.Log.LogWarning($"Re:Fract: Camera for {camName} is null");
+                return;
+            }
+
+            var renderTexture = camera.RenderTexture.Target;
+            if (renderTexture == null)
+            {
+                Plugin.Log.LogWarning($"Re:Fract: Render texture for camera {camName} is null");
+                return;
+            }
+
+            var assetId = renderTexture.Asset.AssetId;
+            if (assetId == 0)
+            {
+                Plugin.Log.LogWarning($"Re:Fract: Asset ID for render texture of camera {camName} is 0");
+                return;
+            }
+
+            var command = new ReFractCommand
+            {
+                RenderTextureId = assetId,
+                IsRemoveAlphaCommand = true,
+                BoolValue = enabled,
+                ValueType = ReFractCommandValueType.Bool
+            };
+            
+            Plugin.Log.LogInfo($"Re:Fract: Sending RemoveAlpha command for {camName}, value: {enabled}");
+            Plugin._messenger.SendObject("SetVariable", command);
+        }
+
+        public static void SetRemoveAlphaGlobal(DynamicVariableSpace space, bool enabled)
+        {
+            var spaceDictField = typeof(DynamicVariableSpace).GetField("_dynamicValues", BindingFlags.Instance | BindingFlags.NonPublic);
+            if (spaceDictField == null) return;
+
+            if (spaceDictField.GetValue(space) is not System.Collections.IDictionary spaceDict) return;
+
+            foreach (var key in spaceDict.Keys)
+            {
+                var keyName = key.GetType().GetField("name")?.GetValue(key) as string;
+                if (string.IsNullOrEmpty(keyName)) continue;
+
+                if (keyName.StartsWith(Plugin.DynVarCamKeyString))
+                {
+                    string camName = keyName.Substring(Plugin.DynVarCamKeyString.Length);
+                    SetRemoveAlpha(space, camName, enabled);
+                }
+            }
+        }
+
         public static void RefreshCameraState(DynamicReferenceVariable<Camera> camVar, Camera camera)
         {
             Plugin.Log.LogMessage($"Re:Fract: Reset {camera.Name} ({camera.ReferenceID})");
@@ -122,27 +187,44 @@ namespace ReFract
 
                 string[] stringTokens = keyName.Split('_');
 
-                // Check if the variable name matches the Re:Fract camera naming convention
-                // Camera variable: ReFract_Cam_<Name>
-                // Setting variable: ReFract_<Name>_<Component>_<Setting>
-                if (splitName.Length == 3 && splitName[0] == "ReFract" && splitName[1] == "Cam" &&
-                    stringTokens.Length == 4 && stringTokens[0] == "ReFract" && stringTokens[1] == splitName[2])
+                if (splitName.Length == 3 && splitName[0] == "Re.Fract" && splitName[1] == "Camera")
                 {
-                    var value = spaceDict[key]?.GetType().GetProperty("Value")?.GetValue(spaceDict[key]);
-                    if (value == null) continue;
+                    string camName = splitName[2];
 
-                    Plugin.Log.LogMessage($"Re:Fract: Refreshing '{keyName}' for camera '{stringTokens[1]}'");
-
-                    // We need to use reflection to call the generic SetCameraVariable method with the correct value type
-                    var method = typeof(CameraHelperFunctions).GetMethod("SetCameraVariable");
-                    if (method == null)
+                    // Check for standard component setting
+                    if (stringTokens.Length == 4 && stringTokens[0] == "Re.Fract" && stringTokens[1] == camName)
                     {
-                        Plugin.Log.LogWarning("Re:Fract: Could not find SetCameraVariable method.");
-                        continue;
-                    }
+                        var value = spaceDict[key]?.GetType().GetProperty("Value")?.GetValue(spaceDict[key]);
+                        if (value == null) continue;
 
-                    var genericMethod = method.MakeGenericMethod(value.GetType());
-                    genericMethod.Invoke(null, new object[] { handler.CurrentSpace, stringTokens[1], stringTokens[2], stringTokens[3], value });
+                        Plugin.Log.LogMessage($"Re:Fract: Refreshing '{keyName}' for camera '{camName}'");
+
+                        var method = typeof(CameraHelperFunctions).GetMethod("SetCameraVariable");
+                        if (method == null) continue;
+
+                        var genericMethod = method.MakeGenericMethod(value.GetType());
+                        genericMethod.Invoke(null, new object[] { handler.CurrentSpace, camName, stringTokens[2], stringTokens[3], value });
+                    }
+                    // Check for RemoveAlpha setting
+                    else if (stringTokens.Length == 3 && stringTokens[0] == "Re.Fract" && stringTokens[1] == camName && stringTokens[2] == "RemoveAlpha")
+                    {
+                        var value = spaceDict[key]?.GetType().GetProperty("Value")?.GetValue(spaceDict[key]);
+                        if (value is bool enabled)
+                        {
+                            Plugin.Log.LogMessage($"Re:Fract: Refreshing 'RemoveAlpha' for camera '{camName}'");
+                            SetRemoveAlpha(handler.CurrentSpace, camName, enabled);
+                        }
+                    }
+                    // Check for Global RemoveAlpha setting
+                    else if (stringTokens.Length == 2 && stringTokens[0] == "Re.Fract" && stringTokens[1] == "RemoveAlpha")
+                    {
+                        var value = spaceDict[key]?.GetType().GetProperty("Value")?.GetValue(spaceDict[key]);
+                        if (value is bool enabled)
+                        {
+                            Plugin.Log.LogMessage($"Re:Fract: Refreshing global 'RemoveAlpha' for camera '{camName}'");
+                            SetRemoveAlpha(handler.CurrentSpace, camName, enabled);
+                        }
+                    }
                 }
             }
         }

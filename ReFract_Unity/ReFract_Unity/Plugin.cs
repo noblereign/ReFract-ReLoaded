@@ -11,6 +11,7 @@ using Renderite.Unity;
 using UnityEngine;
 using UnityEngine.Rendering.PostProcessing;
 using AmplifyOcclusion;
+using TextureFormat = UnityEngine.TextureFormat;
 
 namespace ReFract.Unity;
 
@@ -37,6 +38,7 @@ public class Plugin : BaseUnityPlugin
 {
     private Messenger _msg;
     private static readonly Dictionary<int, List<UnityEngine.Camera>> _cameraCache = new();
+    private static readonly Dictionary<int, bool> _removeAlphaCameras = new();
     
     public static Dictionary<string, Type> TypeLookups = new Dictionary<string, Type>
     {
@@ -78,36 +80,14 @@ public class Plugin : BaseUnityPlugin
         private static FieldInfo _cameraField;
         private static FieldInfo _camera360Field;
 
-        [HarmonyPrefix]
-        public static void Prefix(CameraRenderTask task)
+        // Note: This method of finding the source camera is shared between Prefix and Postfix.
+        private static Camera FindSourceCamera(CameraRenderTask task)
         {
-            Camera captureCam = null;
-
-            // Determine which camera Renderite is using (Standard or 360)
-            if (task.parameters.fov >= 180f)
-            {
-                if (_camera360Field == null) _camera360Field = AccessTools.Field(typeof(CameraRenderer), "camera360");
-                var cam360 = _camera360Field.GetValue(null);
-                if (cam360 != null)
-                {
-                    var prop = AccessTools.Property(cam360.GetType(), "Camera");
-                    captureCam = prop?.GetValue(cam360) as Camera;
-                }
-            }
-            else
-            {
-                if (_cameraField == null) _cameraField = AccessTools.Field(typeof(CameraRenderer), "camera");
-                captureCam = _cameraField.GetValue(null) as Camera;
-            }
-
-            if (captureCam == null) return;
-
             Vector3 taskPos = new Vector3(task.position.x, task.position.y, task.position.z);
             Quaternion taskRot = new Quaternion(task.rotation.x, task.rotation.y, task.rotation.z, task.rotation.w);
             Camera sourceCam = null;
             float minDistance = float.MaxValue;
 
-            // Find the ReFract-managed camera that matches the photo's position
             foreach (var list in _cameraCache.Values)
             {
                 if (list == null) continue;
@@ -115,7 +95,6 @@ public class Plugin : BaseUnityPlugin
                 {
                     if (cam == null) continue;
 
-                    // 1. FOV / Projection Check (These rarely change with movement)
                     if (cam.orthographic)
                     {
                         if (task.parameters.projection != CameraProjection.Orthographic) continue;
@@ -124,15 +103,12 @@ public class Plugin : BaseUnityPlugin
                     else
                     {
                         if (task.parameters.projection == CameraProjection.Orthographic) continue;
-                        // Skip FOV check for 360 renders (fov >= 180) as source cam might be normal
                         if (task.parameters.fov < 180f && Mathf.Abs(cam.fieldOfView - task.parameters.fov) > 5.0f) continue;
                     }
 
-                    // 2. Position & Rotation Check (Relaxed for movement)
                     float dist = Vector3.Distance(cam.transform.position, taskPos);
                     float angle = Quaternion.Angle(cam.transform.rotation, taskRot);
 
-                    // Thresholds: 2.0m distance, 15 degrees rotation to account for latency
                     if (dist < 2.0f && angle < 15.0f)
                     {
                         if (dist < minDistance)
@@ -143,8 +119,32 @@ public class Plugin : BaseUnityPlugin
                     }
                 }
             }
+            return sourceCam;
+        }
+        
+        private static Camera GetCaptureCamera(CameraRenderTask task)
+        {
+            if (task.parameters.fov >= 180f)
+            {
+                if (_camera360Field == null) _camera360Field = AccessTools.Field(typeof(CameraRenderer), "camera360");
+                var cam360 = _camera360Field.GetValue(null);
+                if (cam360 == null) return null;
+                var prop = AccessTools.Property(cam360.GetType(), "Camera");
+                return prop?.GetValue(cam360) as Camera;
+            }
+            
+            if (_cameraField == null) _cameraField = AccessTools.Field(typeof(CameraRenderer), "camera");
+            return _cameraField.GetValue(null) as Camera;
+        }
 
-            // Check for both root and child volumes to ensure we clean up everything
+        [HarmonyPrefix]
+        public static void Prefix(CameraRenderTask task)
+        {
+            var captureCam = GetCaptureCamera(task);
+            if (captureCam == null) return;
+            
+            var sourceCam = FindSourceCamera(task);
+
             var rootVolume = captureCam.gameObject.GetComponent<PostProcessVolume>();
             var childTransform = captureCam.transform.Find("ReFract_Volume");
             var childVolume = childTransform != null ? childTransform.GetComponent<PostProcessVolume>() : null;
@@ -168,12 +168,10 @@ public class Plugin : BaseUnityPlugin
                         childVolume.isGlobal = false;
                     }
                     
-                    // Ensure root volume is disabled if it exists, we only want the child
                     if (rootVolume != null) rootVolume.enabled = false;
 
                     childVolume.enabled = true;
 
-                    // Clone profile to disable motion blur without affecting source
                     var profileClone = Instantiate(sourceVolume.profile);
                     var mb = profileClone.GetSetting<MotionBlur>();
                     if (mb != null) mb.enabled.value = false;
@@ -191,13 +189,49 @@ public class Plugin : BaseUnityPlugin
             }
             else
             {
-                // Disable volumes if this is a normal photo to avoid leaking effects from previous shots
                 if (rootVolume != null) rootVolume.enabled = false;
                 if (childVolume != null) childVolume.enabled = false;
             }
         }
-    }
+        
+        [HarmonyPostfix]
+        public static void Postfix(CameraRenderTask task)
+        {
+            var sourceCam = FindSourceCamera(task);
+            if (sourceCam == null || sourceCam.targetTexture == null) return;
 
+            if (_removeAlphaCameras.TryGetValue(sourceCam.targetTexture.GetInstanceID(), out bool removeAlpha) && removeAlpha)
+            {
+                try
+                {
+                    // Access the shared memory buffer where the render result was just written
+                    Span<byte> data = RenderingManager.Instance.SharedMemory.AccessData(task.resultData);
+                    
+                    // Determine alpha offset based on format
+                    // Default to RGBA (offset 3)
+                    int alphaOffset = 3;
+                    
+                    // Check for ARGB format (offset 0)
+                    string fmt = task.parameters.textureFormat.ToString();
+                    if (fmt.IndexOf("ARGB", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        alphaOffset = 0;
+                    }
+
+                    // Set alpha to 255 (Opaque)
+                    for (int i = alphaOffset; i < data.Length; i += 4)
+                    {
+                        data[i] = 255;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogError($"[Re:Fract] Failed to remove alpha: {ex}");
+                }
+            }
+        }
+    }
+    
     private void HandleSetVariable(ReFractCommand command)
     {
         Debug.Log($"[Re:Fract] Received command for RT ID: {command.RenderTextureId}");
@@ -208,14 +242,27 @@ public class Plugin : BaseUnityPlugin
             return;
         }
 
+        // Try to resolve the texture immediately to handle RemoveAlpha using the Unity Instance ID
+        var rtAsset = RenderingManager.Instance.RenderTextures.GetAsset(command.RenderTextureId);
+        if (rtAsset?.Texture != null && command.IsRemoveAlphaCommand)
+        {
+            int unityId = rtAsset.Texture.GetInstanceID();
+            Debug.Log($"[Re:Fract] Setting RemoveAlpha for Unity Texture {unityId} (Resonite {command.RenderTextureId}) to {command.BoolValue}");
+            _removeAlphaCameras[unityId] = command.BoolValue;
+        }
+
         if (!_cameraCache.TryGetValue(command.RenderTextureId, out var cameras) || cameras == null)
         {
             Debug.Log($"[Re:Fract] Camera for {command.RenderTextureId} not in cache or is null. Searching...");
             
-            var rtAsset = RenderingManager.Instance.RenderTextures.GetAsset(command.RenderTextureId);
             if (rtAsset?.Texture == null)
             {
-                // This can happen if the texture isn't ready yet. Don't log an error, just wait for the next command.
+                // If texture is missing, we can't do anything yet.
+                // If it was an alpha command, we also couldn't set the flag, so we wait.
+                if (command.IsRemoveAlphaCommand)
+                {
+                    StartCoroutine(WaitForCameraAndApply(command));
+                }
                 return;
             }
             Debug.Log($"[Re:Fract] Found render texture asset for {command.RenderTextureId}");
@@ -233,6 +280,11 @@ public class Plugin : BaseUnityPlugin
         else
         {
             Debug.Log($"[Re:Fract] Using cached cameras for ID {command.RenderTextureId}");
+            // Ensure alpha flag is set if we used cache (in case rtAsset lookup failed above but cache exists)
+            if (command.IsRemoveAlphaCommand && cameras.Count > 0 && cameras[0].targetTexture != null)
+            {
+                _removeAlphaCameras[cameras[0].targetTexture.GetInstanceID()] = command.BoolValue;
+            }
         }
 
         cameras.RemoveAll(c => c == null);
@@ -247,7 +299,10 @@ public class Plugin : BaseUnityPlugin
         foreach (var camera in cameras)
         {
             EnsurePostProcessVolume(camera);
-            ApplyCommand(camera, command);
+            if (!command.IsRemoveAlphaCommand)
+            {
+                ApplyCommand(camera, command);
+            }
         }
     }
 
@@ -259,6 +314,12 @@ public class Plugin : BaseUnityPlugin
         var rtAsset = RenderingManager.Instance.RenderTextures.GetAsset(command.RenderTextureId);
         if (rtAsset?.Texture == null) yield break;
 
+        // Handle Alpha Command late
+        if (command.IsRemoveAlphaCommand)
+        {
+            _removeAlphaCameras[rtAsset.Texture.GetInstanceID()] = command.BoolValue;
+        }
+
         var cameras = FindCamerasRenderingTo(rtAsset.Texture);
         if (cameras.Count > 0)
         {
@@ -267,7 +328,10 @@ public class Plugin : BaseUnityPlugin
             foreach (var camera in cameras)
             {
                 EnsurePostProcessVolume(camera);
-                ApplyCommand(camera, command);
+                if (!command.IsRemoveAlphaCommand)
+                {
+                    ApplyCommand(camera, command);
+                }
             }
         }
         else
@@ -278,7 +342,6 @@ public class Plugin : BaseUnityPlugin
 
     private void EnsurePostProcessVolume(Camera camera)
     {
-        // Add our tracker component to the camera to handle cleanup on destruction
         if (camera.gameObject.GetComponent<ReFractVolumeTracker>() == null)
         {
             camera.gameObject.AddComponent<ReFractVolumeTracker>();
@@ -298,13 +361,11 @@ public class Plugin : BaseUnityPlugin
             }
         }
 
-        // Cleanup legacy components on the camera itself
         var legacyVol = camera.GetComponent<PostProcessVolume>();
         if (legacyVol != null) Destroy(legacyVol);
         var legacyCol = camera.GetComponent<BoxCollider>();
         if (legacyCol != null) Destroy(legacyCol);
 
-        // Move Volume to a child object on "Ignore Raycast" layer
         Transform child = camera.transform.Find("ReFract_Volume");
         if (child == null)
         {
@@ -330,7 +391,6 @@ public class Plugin : BaseUnityPlugin
             collider.size = Vector3.one * 0.01f;
         }
 
-        // Ensure profile is unique
         string uniqueName = $"ReFract_Profile_{camera.GetInstanceID()}";
         if (volume.profile == null)
         {
@@ -394,7 +454,6 @@ public class Plugin : BaseUnityPlugin
         }
         else
         {
-            // For MonoBehaviours like AmplifyOcclusion
             target = camera.GetComponent(type);
         }
 
@@ -408,8 +467,6 @@ public class Plugin : BaseUnityPlugin
         object value = GetValueFromCommand(command);
         var compType = target.GetType();
         
-        // If the parameter name ends with '!', treat it as a direct property access.
-        // This bypasses the default logic which prioritizes ParameterOverride fields.
         if (command.ParameterName.EndsWith("!"))
         {
             string propName = command.ParameterName.Substring(0, command.ParameterName.Length - 1);
@@ -430,17 +487,15 @@ public class Plugin : BaseUnityPlugin
 
         Debug.Log($"[Re:Fract] Attempting to set '{command.ParameterName}' on '{command.ComponentName} ({compType.FullName})' to value '{value}'");
 
-        // Check for PostProcessing Parameters (ParameterOverride)
         var field = compType.GetField(command.ParameterName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
         if (field != null && typeof(ParameterOverride).IsAssignableFrom(field.FieldType))
         {
-            var fieldValue = field.GetValue(target); // This is the ParameterOverride instance
+            var fieldValue = field.GetValue(target); 
             if (fieldValue != null)
             {
                 var paramType = fieldValue.GetType();
                 bool valueSet = false;
 
-                // Try Field first (Standard for PostProcessing Stack v2)
                 var valueField = paramType.GetField("value", BindingFlags.Instance | BindingFlags.Public);
                 if (valueField != null)
                 {
@@ -453,7 +508,6 @@ public class Plugin : BaseUnityPlugin
                     catch (Exception ex) { Debug.LogWarning($"[Re:Fract] Failed to set ParameterOverride field value: {ex}"); }
                 }
 
-                // Fallback to Property if field fails or doesn't exist
                 if (!valueSet)
                 {
                     var valueProp = paramType.GetProperty("value");
@@ -471,7 +525,6 @@ public class Plugin : BaseUnityPlugin
         
                 if (valueSet)
                 {
-                    // Enable the override. This is crucial for the change to take effect.
                     var overrideStateField = paramType.GetField("overrideState", BindingFlags.Instance | BindingFlags.Public);
                     if (overrideStateField != null)
                     {
@@ -529,9 +582,29 @@ public class Plugin : BaseUnityPlugin
         }
     }
 
+    private static void SetOpaque(byte[] rawTex, TextureFormat format)
+    {
+        int start;
+        int inc;
+
+        switch (format)
+        {
+            case TextureFormat.RGBA32:
+                start = 3; inc = 4; break;
+            case TextureFormat.ARGB32:
+                start = 0; inc = 4; break;
+            default:
+                return;
+        }
+
+        for (int i = start; i < rawTex.Length; i += inc)
+        {
+            rawTex[i] = 255;
+        }
+    }
+
     private static List<UnityEngine.Camera> FindCamerasRenderingTo(RenderTexture target)
     {
-        // Find all cameras currently in the scene
         Debug.Log($"[Re:Fract] Searching for RenderTexture {(target ? target.name : "NULL TARGET")} @ {(target ? target.GetInstanceID() : "N/A")}");
         Camera[] allCameras = FindObjectsOfType<Camera>();
         List<UnityEngine.Camera> foundCameras = new List<UnityEngine.Camera>();
@@ -539,7 +612,6 @@ public class Plugin : BaseUnityPlugin
         foreach (Camera cam in allCameras)
         {
             Debug.Log($"[Re:Fract] Camera {cam.name} @ {cam.GetInstanceID()} --> {(cam.targetTexture ? cam.targetTexture.name : "NULL TARGET")} @ {(cam.targetTexture ? cam.targetTexture.GetInstanceID() : "N/A")}...");
-            // Check if the camera's targetTexture matches the desired one
             if (cam.targetTexture == target)
             {
                 foundCameras.Add(cam);
