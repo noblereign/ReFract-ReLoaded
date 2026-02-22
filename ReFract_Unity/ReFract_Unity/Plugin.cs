@@ -3,6 +3,7 @@ using System;
 using System.Reflection;
 using System.Collections;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using HarmonyLib;
 using InterprocessLib;
 using ReFract.Shared;
@@ -45,6 +46,7 @@ public class Plugin : BaseUnityPlugin
     private Messenger _msg;
     private static readonly Dictionary<int, List<UnityEngine.Camera>> _cameraCache = new();
     private static readonly Dictionary<int, bool> _removeAlphaCameras = new();
+    private readonly ConcurrentQueue<Action> _mainThreadQueue = new();
     
     public static Dictionary<string, Type> TypeLookups = new Dictionary<string, Type>
     {
@@ -77,6 +79,14 @@ public class Plugin : BaseUnityPlugin
         catch (TypeLoadException ex)
         {
             Debug.Log($"[Re:Fract] Failed to register receiver. This is likely a DLL version mismatch: {ex}");
+        }
+    }
+
+    void Update()
+    {
+        while (_mainThreadQueue.TryDequeue(out var action))
+        {
+            action();
         }
     }
 
@@ -239,6 +249,11 @@ public class Plugin : BaseUnityPlugin
     }
     
     private void HandleSetVariable(ReFractCommand command)
+    {
+        _mainThreadQueue.Enqueue(() => HandleSetVariableInternal(command));
+    }
+
+    private void HandleSetVariableInternal(ReFractCommand command)
     {
         Debug.Log($"[Re:Fract] Received command for RT ID: {command.RenderTextureId}");
 
