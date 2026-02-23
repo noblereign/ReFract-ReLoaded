@@ -5,9 +5,9 @@ schemaVersion = "0.0.1"
 
 [package]
 namespace = "Noble" # TODO: Change this to the team you're uploading the mod to on Thunderstore
-name = "ReFract_FrooxEngine" # Change this to your mod's name, no spaces or special characters, max 128 characters
+name = "ReFract" # Change this to your mod's name, no spaces or special characters, max 128 characters
 # versionNumber = "1.0.0" # Uncomment this if publishing via manual tcli! Change this to your mod's version, must be in semantic versioning format (e.g. 1.0.0, 2.1.3, 0.1.0-alpha.1)
-description = "Example mod description" # TODO: Change this to your mod's description, max 250 characters
+description = "A Resonite mod which exposes the Unity Post Processing stack to Resonite cameras." # TODO: Change this to your mod's description, max 250 characters
 websiteUrl = "https://github.com/noblereign/ReFract-ReLoaded" # TODO: Change this to your mod's website/repository, or leave blank
 containsNsfwContent = false
 
@@ -15,6 +15,8 @@ containsNsfwContent = false
 [package.dependencies] 
 ResoniteModding-BepisLoader = "1.5.1"
 ResoniteModding-BepisResoniteWrapper = "1.0.2"
+ResoniteModding-BepInExRenderer = "5.4.233001"
+Nytra-InterprocessLib = "3.0.0"
 
 [build]
 icon = "./icon.png"
@@ -23,13 +25,24 @@ outdir = "./build"
 
 # Copy the compiled DLL to the plugins folder in the mod package
 [[build.copy]]
-source = "./ReFract_FrooxEngine/bin/Release/ReFract_FrooxEngine.dll"
-target = "plugins/ReFract_FrooxEngine/"
+source = "./ReFract_FrooxEngine/ReFract_FrooxEngine/bin/Release/ReFract_FrooxEngine.dll"
+target = "plugins/ReFract.FrooxEngine/"
 
 # Include the PDB file for better debugging support
 [[build.copy]]
-source = "./ReFract_FrooxEngine/bin/Release/ReFract_FrooxEngine.pdb"
-target = "plugins/ReFract_FrooxEngine/"
+source = "./ReFract_FrooxEngineReFract_FrooxEngine//bin/Release/ReFract_FrooxEngine.pdb"
+target = "plugins/ReFract.FrooxEngine/"
+
+# Copy the compiled DLL to the plugins folder in the mod package
+[[build.copy]]
+source = "./ReFract_Unity/ReFract_Unity/bin/Release/ReFract_Unity.dll"
+target = "Renderer/BepInEx/plugins/ReFract.Unity/"
+
+# Include the PDB file for better debugging support
+[[build.copy]]
+source = "./ReFract_Unity/ReFract_Unity/bin/Release/ReFract_Unity.pdb"
+target = "Renderer/BepInEx/plugins/ReFract.Unity/"
+
 
 # Uncomment the following lines to include CHANGELOG file in your mod package. https://wiki.thunderstore.io/mods/updating-a-package#changelog
 # [[build.copy]]
@@ -37,9 +50,9 @@ target = "plugins/ReFract_FrooxEngine/"
 # target = "/"
 
 # Uncomment the following line to include LICENSE file in your mod package, if you have one.
-# [[build.copy]]
-# source = "./LICENSE"
-# target = "/"
+[[build.copy]]
+source = "./LICENSE"
+target = "/"
 
 [publish]
 repository = "https://thunderstore.io"
