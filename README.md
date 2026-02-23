@@ -24,10 +24,10 @@ Requires [BepisLoader](https://modding.resonite.net/getting-started/installation
 - yosh's **Lightweight ReFract Camera** is a lot simpler and gentler on your computer, though it only supports focus for now. You can find it in their public folder: `resrec:///U-yosh/R-E10773FA7D4EC7F497B13DA7C8FC1500027547052763A2CED4004747637F32AD`
 
 ## Examples
-<img width="720" height="540" alt="2026-02-22 10 00 25" src="https://github.com/user-attachments/assets/d836a34d-4533-4dc6-b110-a7428aa5cda1" />
-<img width="720" height="540" alt="2026-02-21 00 53 13 fixed-alpha" src="https://github.com/user-attachments/assets/21731ec5-1288-489e-85c6-aff76b4ca894" />
-<img width="720" height="540" alt="2026-02-20 22 38 06 fixed-alpha" src="https://github.com/user-attachments/assets/06f5468e-f9f8-4651-89d0-7554830c8333" />
-<img width="720" height="540" alt="2026-02-20 17 19 33 fixedalpha" src="https://github.com/user-attachments/assets/b84b9c06-07ec-42aa-a7b2-d869e803115d" />
+<img width="720" height="408" alt="2026-02-22 10 00 25" src="https://github.com/user-attachments/assets/d836a34d-4533-4dc6-b110-a7428aa5cda1" />
+<img width="720" height="408" alt="2026-02-21 00 53 13 fixed-alpha" src="https://github.com/user-attachments/assets/21731ec5-1288-489e-85c6-aff76b4ca894" />
+<img width="720" height="408" alt="2026-02-20 22 38 06 fixed-alpha" src="https://github.com/user-attachments/assets/06f5468e-f9f8-4651-89d0-7554830c8333" />
+<img width="720" height="408" alt="2026-02-20 17 19 33 fixedalpha" src="https://github.com/user-attachments/assets/b84b9c06-07ec-42aa-a7b2-d869e803115d" />
 
 ## Known Issues
 - Minor inconvenience: right now there's a small chance that the post-processing effects won't get applied in a photo. Usually just taking it again will fix it.
