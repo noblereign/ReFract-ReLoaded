@@ -5,10 +5,10 @@
     <Authors>Noble</Authors>
     <TargetFramework>net472</TargetFramework>
 	  <LangVersion>12</LangVersion>
-    <RepositoryUrl>https://github.com/Noble/ReFract_Unity</RepositoryUrl>
-    <PackageId>dog.glacier.ReFractUnity</PackageId>
-    <Product>SteamVR_LowFPS_Fix</Product>
-    <RootNamespace>SteamVR_LowFPS_Fix</RootNamespace>
+    <RepositoryUrl>https://github.com/noblereign/ReFract-ReLoaded</RepositoryUrl>
+    <PackageId>dog.glacier.ReFract</PackageId>
+    <Product>Re:Fract // Reloaded (for Unity)</Product>
+    <RootNamespace>ReFract</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <Deterministic>true</Deterministic>
