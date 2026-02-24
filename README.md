@@ -40,3 +40,12 @@ Requires [BepisLoader](https://modding.resonite.net/getting-started/installation
 - [Cyro](https://github.com/BlueCyro) for making [the OG Re:Fract](https://github.com/BlueCyro/ReFract)!
 - [pocoworks](https://github.com/pocoworks) for [updating Re:Fract to Resonite](https://github.com/pocoworks/ReFract).
 - [yosh](https://github.com/yoshiyoshyosh) for making [the final update to Re:Fract](https://github.com/yoshiyoshyosh/ReFract/releases/tag/1.1.3-resonite-alphaoption), which this mod is based on.
+
+## Notes and disclaimers
+> [!WARNING]
+> **Gemini Code Assist was used in the making of this mod**, primarily to write code that I *knew* I needed to write, but didn't know *how*. I made sure the code it spat out wasn't completely useless garbage, but, y'know.
+>
+> I tested the mod extensively throughout making it and fixed as many bugs as I could, but I'm sure there's still so much that could be improved code-wise. If you have any improvements to suggest, please submit an issue/PR!
+
+> [!NOTE]
+> **Please feel free to port the mod to other loaders** if you wish to. I used Bepis because it's what I felt the most comfortable working with this time, but InterprocessLib theoretically supports MonkeyLoader and ResoniteModLoader. I don't know how that support necessarily works, but if you're smarter than I am, you can probably figure it out.
