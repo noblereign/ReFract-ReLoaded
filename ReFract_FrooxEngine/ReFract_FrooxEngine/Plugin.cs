@@ -48,22 +48,7 @@ public class Plugin : BasePlugin
         {
             Harmony harmony = new Harmony("dog.glacier.ReFract");
             harmony.PatchAll();
-            Log.LogInfo("Harmony patches installed.");
-            var patches = Harmony.GetAllPatchedMethods();
-            Log.LogInfo("=== Patched Methods ===");
-            foreach (var method in patches)
-            {
-                Log.LogInfo($"Patched: {method.DeclaringType?.FullName}.{method.Name}");
-                var patchInfo = Harmony.GetPatchInfo(method);
-                if (patchInfo != null)
-                {
-                    Log.LogInfo($"  Prefixes: {patchInfo.Prefixes.Count}");
-                    Log.LogInfo($"  Postfixes: {patchInfo.Postfixes.Count}");
-                }
-            }
-            Log.LogInfo("=== End of Patched Methods ===");
-
-            Log.LogInfo("Harmony patches installed.");
+            Log.LogInfo("Harmony patch worked yippeeee!!");
         }
         catch (Exception ex)
         {
