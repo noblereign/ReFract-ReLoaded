@@ -62,7 +62,7 @@ public class Plugin : BaseUnityPlugin
         { "MotionBlur", typeof(MotionBlur) },
         { "ScreenSpaceReflections", typeof(ScreenSpaceReflections) },
         { "Vignette", typeof(Vignette) },
-        { "AmplifyOcclusionBase", typeof(AmplifyOcclusionBase) } // Include this specifically since it does post processing, but is not part of the bundle stack
+        { "AmplifyOcclusionBase", typeof(AmplifyOcclusionEffect) } // Include this specifically since it does post processing, but is not part of the bundle stack
     };
     // TypeLookups will be used to easily get a type from one specified in a dynamic variable name string
 
