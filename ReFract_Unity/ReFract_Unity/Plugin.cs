@@ -1,8 +1,6 @@
 ﻿using BepInEx;
-using System;
 using System.Reflection;
 using System.Collections;
-using System.Collections.Generic;
 using System.Collections.Concurrent;
 using HarmonyLib;
 using InterprocessLib;
@@ -12,7 +10,6 @@ using Renderite.Unity;
 using UnityEngine;
 using UnityEngine.Rendering.PostProcessing;
 using AmplifyOcclusion;
-using TextureFormat = UnityEngine.TextureFormat;
 
 namespace ReFract.Unity;
 
@@ -40,7 +37,7 @@ public class ReFractVolumeTracker : MonoBehaviour
     }
 }
 
-[BepInPlugin("dog.glacier.ReFractUnity", "Re:Fract // Reloaded (for Unity)", "1.0.0")]
+[BepInPlugin("dog.glacier.ReFractUnity", "Re:Fract // Reloaded (for Unity)", "1.0.1")]
 public class Plugin : BaseUnityPlugin
 {
     internal static ReFractConfig BoundConfig { get; private set; } = null!;
@@ -62,11 +59,13 @@ public class Plugin : BaseUnityPlugin
         { "MotionBlur", typeof(MotionBlur) },
         { "ScreenSpaceReflections", typeof(ScreenSpaceReflections) },
         { "Vignette", typeof(Vignette) },
-        { "AmplifyOcclusionBase", typeof(AmplifyOcclusionBase) } // Include this specifically since it does post processing, but is not part of the bundle stack
+        // Including amplify occlusion stuff specifically since they do post processing, but aren't part of the bundle stack
+        { "AmplifyOcclusionBase", typeof(AmplifyOcclusionEffect) }, // Point older cameras at the new type, since AO got updated in 2026.4.16.1327 and the types completely changed
+        { "AmplifyOcclusionEffect", typeof(AmplifyOcclusionEffect) } 
     };
     // TypeLookups will be used to easily get a type from one specified in a dynamic variable name string
 
-	void Awake()
+    void Awake()
 	{
         Debug.Log($"[Re:Fract] Binding configs");
         BoundConfig = new ReFractConfig(base.Config);
@@ -96,6 +95,8 @@ public class Plugin : BaseUnityPlugin
         }
     }
 
+    private static (WeakReference<Camera> Capture, WeakReference<Camera> Source) lastCameraPair = (new WeakReference<Camera>(null), new WeakReference<Camera>(null));
+
     [HarmonyPatch(typeof(CameraRenderer), "Render")]
     public static class CameraRenderer_Patch
     {
@@ -116,6 +117,7 @@ public class Plugin : BaseUnityPlugin
                 foreach (var cam in list)
                 {
                     if (cam == null) continue;
+                    if (!cam.isActiveAndEnabled) continue;
 
                     if (cam.orthographic)
                     {
@@ -159,13 +161,47 @@ public class Plugin : BaseUnityPlugin
             return _cameraField.GetValue(null) as Camera;
         }
 
+        private static void SetAmplifyOcclusionDefaults(AmplifyOcclusionEffect amplifyOcclusion) // set to defaults as observed in the code and through unity explorer
+        {
+            amplifyOcclusion.ApplyMethod = AmplifyOcclusionEffect.ApplicationMethod.PostEffect;
+            amplifyOcclusion.SampleCount = SampleCountLevel.Low;
+            amplifyOcclusion.PerPixelNormals = AmplifyOcclusionEffect.PerPixelNormalSource.None;
+            amplifyOcclusion.Intensity = 1f;
+            amplifyOcclusion.Tint = new Color(0f, 0f, 0f, 1f);
+            amplifyOcclusion.Radius = 4f;
+            amplifyOcclusion.PowerExponent = 0.6f;
+            amplifyOcclusion.Bias = 0.05f;
+            amplifyOcclusion.Thickness = 1f;
+            amplifyOcclusion.Downsample = true;
+            amplifyOcclusion.CacheAware = true;
+            amplifyOcclusion.BlurEnabled = true;
+            amplifyOcclusion.BlurRadius = 4;
+            amplifyOcclusion.BlurPasses = 4;
+            amplifyOcclusion.BlurSharpness = 3f;
+            amplifyOcclusion.FadeEnabled = true;
+            amplifyOcclusion.FadeStart = 16f;
+            amplifyOcclusion.FadeLength = 128f;
+            amplifyOcclusion.FadeToIntensity = 0f;
+            amplifyOcclusion.FadeToRadius = 2f;
+            amplifyOcclusion.FadeToThickness = 1f;
+            amplifyOcclusion.FadeToTint = new Color(0f, 0f, 0f, 1f);
+            amplifyOcclusion.FadeToPowerExponent = 1;
+            amplifyOcclusion.FilterEnabled = false;
+            amplifyOcclusion.FilterDownsample = true;
+            amplifyOcclusion.FilterBlending = 0.8f;
+            amplifyOcclusion.FilterResponse = 0.5f;
+            amplifyOcclusion.useMRTBlendingFallback = false;
+        }
+
         [HarmonyPrefix]
         public static void Prefix(CameraRenderTask task, out Camera __state)
         {
             __state = null;
             var captureCam = GetCaptureCamera(task);
             if (captureCam == null) return;
-            
+
+            var amplifyOcclusion = captureCam.GetComponent<AmplifyOcclusionEffect>();
+
             var sourceCam = FindSourceCamera(task);
             __state = sourceCam;
 
@@ -176,6 +212,11 @@ public class Plugin : BaseUnityPlugin
             if (sourceCam != null)
             {
                 Debug.Log($"[Re:Fract] Syncing PostProcess from '{sourceCam.GetInstanceID()}' to Capture Camera.");
+
+                lastCameraPair.Capture.SetTarget(captureCam); // store the used cameras temporarily so we can handle postprocessing ourselves later
+                lastCameraPair.Source.SetTarget(sourceCam); // this should probably be fine as long as nothing takes like two photos at once i think
+
+
                 var sourceVolume = sourceCam.GetComponentInChildren<PostProcessVolume>();
                 if (sourceVolume != null && sourceVolume.profile != null)
                 {
@@ -210,11 +251,54 @@ public class Plugin : BaseUnityPlugin
                         layer.volumeTrigger = captureCam.transform;
                     }
                 }
+
+                var sourceAmplifyOcclusion = sourceCam.GetComponent<AmplifyOcclusionEffect>();
+                if (amplifyOcclusion != null)
+                {
+                    if (sourceAmplifyOcclusion != null)
+                    { // copy a looooot of parameters from the source to the capturer 😭
+                        Debug.Log($"[Re:Fract] Syncing Amplify Occlusion from '{sourceCam.GetInstanceID()}' to Capture Camera.");
+                        amplifyOcclusion.enabled = sourceAmplifyOcclusion.enabled;
+                        amplifyOcclusion.ApplyMethod = sourceAmplifyOcclusion.ApplyMethod;
+                        amplifyOcclusion.SampleCount = sourceAmplifyOcclusion.SampleCount;
+                        amplifyOcclusion.PerPixelNormals = sourceAmplifyOcclusion.PerPixelNormals;
+                        amplifyOcclusion.Intensity = sourceAmplifyOcclusion.Intensity;
+                        amplifyOcclusion.Tint = sourceAmplifyOcclusion.Tint;
+                        amplifyOcclusion.Radius = sourceAmplifyOcclusion.Radius;
+                        amplifyOcclusion.PowerExponent = sourceAmplifyOcclusion.PowerExponent;
+                        amplifyOcclusion.Bias = sourceAmplifyOcclusion.Bias;
+                        amplifyOcclusion.Thickness = sourceAmplifyOcclusion.Thickness;
+                        amplifyOcclusion.Downsample = sourceAmplifyOcclusion.Downsample;
+                        amplifyOcclusion.CacheAware = sourceAmplifyOcclusion.CacheAware;
+                        amplifyOcclusion.BlurEnabled = sourceAmplifyOcclusion.BlurEnabled;
+                        amplifyOcclusion.BlurRadius = sourceAmplifyOcclusion.BlurRadius;
+                        amplifyOcclusion.BlurPasses = sourceAmplifyOcclusion.BlurPasses;
+                        amplifyOcclusion.BlurSharpness = sourceAmplifyOcclusion.BlurSharpness;
+                        amplifyOcclusion.FadeEnabled = sourceAmplifyOcclusion.FadeEnabled;
+                        amplifyOcclusion.FadeStart = sourceAmplifyOcclusion.FadeStart;
+                        amplifyOcclusion.FadeLength = sourceAmplifyOcclusion.FadeLength;
+                        amplifyOcclusion.FadeToIntensity = sourceAmplifyOcclusion.FadeToIntensity;
+                        amplifyOcclusion.FadeToRadius = sourceAmplifyOcclusion.FadeToRadius;
+                        amplifyOcclusion.FadeToThickness = sourceAmplifyOcclusion.FadeToThickness;
+                        amplifyOcclusion.FadeToTint = sourceAmplifyOcclusion.FadeToTint;
+                        amplifyOcclusion.FadeToPowerExponent = sourceAmplifyOcclusion.FadeToPowerExponent;
+                        amplifyOcclusion.FilterEnabled = sourceAmplifyOcclusion.FilterEnabled;
+                        amplifyOcclusion.FilterDownsample = sourceAmplifyOcclusion.FilterDownsample;
+                        amplifyOcclusion.FilterBlending = sourceAmplifyOcclusion.FilterBlending;
+                        amplifyOcclusion.FilterResponse = sourceAmplifyOcclusion.FilterResponse;
+                        amplifyOcclusion.useMRTBlendingFallback = sourceAmplifyOcclusion.useMRTBlendingFallback;
+                    }
+                    else
+                    {
+                        SetAmplifyOcclusionDefaults(amplifyOcclusion);
+                    }
+                }
             }
             else
             {
                 if (rootVolume != null) rootVolume.enabled = false;
                 if (childVolume != null) childVolume.enabled = false;
+                if (amplifyOcclusion != null) SetAmplifyOcclusionDefaults(amplifyOcclusion);
             }
         }
         
@@ -255,6 +339,45 @@ public class Plugin : BaseUnityPlugin
             }
         }
     }
+
+    // god this feels so scuffed to me 😭
+    [HarmonyPatch(typeof(CameraPostprocessingManager), "UpdatePostProcessing", new Type[] { typeof(bool), typeof(bool), typeof(bool) })]
+    public static class CameraPostProcessingManager_UpdatePostProcessing_Patch
+    {
+        [HarmonyPostfix]
+        public static void Postfix(CameraPostprocessingManager __instance, bool enabled, bool motionBlur, bool screenspaceReflections)
+        {
+            lastCameraPair.Capture.TryGetTarget(out Camera captureCam);
+            lastCameraPair.Source.TryGetTarget(out Camera sourceCam);
+
+            // now clear them because they wont be needed outside of this function :D
+            lastCameraPair.Capture.SetTarget(null);
+            lastCameraPair.Source.SetTarget(null);
+
+            if (__instance.Camera != null && __instance.Camera == captureCam && captureCam != null && sourceCam != null) // handle it ourselves because the renderer keeps forcing AO on :(
+            {
+                if (__instance._postProcessing == null)
+                {
+                    return;
+                }
+
+                if (__instance._ao != null)
+                {
+                    var sourceAmplifyOcclusion = sourceCam.GetComponent<AmplifyOcclusionEffect>();
+                    if (sourceAmplifyOcclusion != null)
+                    {
+                        __instance._ao.enabled = sourceAmplifyOcclusion.enabled;
+                    }
+                    else
+                    {
+                        Debug.LogWarning("Could not find the source camera's AO, so we'll set it like the vanilla game");
+                        __instance._ao.enabled = enabled;
+                    } 
+                }
+            }
+        }
+    }
+
     
     private void HandleSetVariable(ReFractCommand command)
     {

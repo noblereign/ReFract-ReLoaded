@@ -48,6 +48,13 @@
       <Private>False</Private>
     </Reference>
   </ItemGroup>
+  
+  <ItemGroup>
+    <PackageReference Include="BepInEx.AssemblyPublicizer.MSBuild" Version="0.4.3">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
 
   <ItemGroup>
     <Reference Include="0Harmony">
@@ -56,7 +63,7 @@
     <Reference Include="BepInEx">
       <HintPath>$(GamePath)Renderer\BepInEx\core\BepInEx.dll</HintPath>
     </Reference>
-    <Reference Include="Assembly-CSharp">
+    <Reference Include="Assembly-CSharp" Publicize="true">
       <HintPath>$(GamePath)Renderer\Renderite.Renderer_Data\Managed\Assembly-CSharp.dll</HintPath>
     </Reference>
     <Reference Include="Renderite.Unity">
