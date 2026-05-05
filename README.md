@@ -3,7 +3,7 @@
 
 A [Resonite](https://resonite.com/) mod which exposes the Unity Post Processing stack to Resonite cameras.
 
-Requires [BepisLoader](https://modding.resonite.net/getting-started/installation/), [BepInExRenderer](https://thunderstore.io/c/resonite/p/ResoniteModding/BepInExRenderer/), and [InterprocessLib](https://thunderstore.io/c/resonite/p/Nytra/InterprocessLib/) (which itself requires [RenderiteHook](thunderstore.io/c/resonite/p/ResoniteModding/RenderiteHook/)).
+Requires [BepisLoader](https://modding.resonite.net/getting-started/installation/), [BepInExRenderer](https://thunderstore.io/c/resonite/p/ResoniteModding/BepInExRenderer/), and [InterprocessLib](https://thunderstore.io/c/resonite/p/Nytra/InterprocessLib/) (which itself requires [RenderiteHook](https://thunderstore.io/c/resonite/p/ResoniteModding/RenderiteHook/)).
 
 ## Main Features
 - Lets you dynamically alter things such as bloom, depth of field and much more
