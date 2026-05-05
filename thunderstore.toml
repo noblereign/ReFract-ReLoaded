@@ -31,7 +31,7 @@ target = "plugins/ReFract.FrooxEngine/"
 
 # Include the PDB file for better debugging support
 [[build.copy]]
-source = "./ReFract_FrooxEngineReFract_FrooxEngine//bin/Release/ReFract_FrooxEngine.pdb"
+source = "./ReFract_FrooxEngineReFract_FrooxEngine/bin/Release/ReFract_FrooxEngine.pdb"
 target = "plugins/ReFract.FrooxEngine/"
 
 # Copy the compiled DLL to the plugins folder in the mod package
