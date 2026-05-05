@@ -17,6 +17,7 @@ ResoniteModding-BepisLoader = "1.5.1"
 ResoniteModding-BepisResoniteWrapper = "1.0.2"
 ResoniteModding-BepInExRenderer = "5.4.233001"
 Nytra-InterprocessLib = "3.0.0"
+ResoniteModding-RenderiteHook = "1.1.1"
 
 [build]
 icon = "./icon.png"
