@@ -36,7 +36,7 @@ public class Plugin : BasePlugin
         Log.LogInfo($"Plugin {PluginMetadata.GUID} is binding configs");
         BoundConfig = new ReFractConfig(base.Config);
         Log.LogInfo($"Plugin {PluginMetadata.GUID} is preparing interprocess");
-        _messenger = new Messenger("dog.glacier.ReFract", [typeof(ReFractCommand)]);
+        _messenger = new Messenger("dog.glacier.ReFract", true, "dog.glacier.ReFract");
         _messenger.SyncConfigEntry(BoundConfig.debugLogging);
         _messenger.SyncConfigEntry(BoundConfig.forceRemoveAlpha);
         Log.LogInfo($"Plugin {PluginMetadata.GUID} is loaded!");
@@ -48,11 +48,17 @@ public class Plugin : BasePlugin
         {
             Harmony harmony = new Harmony("dog.glacier.ReFract");
             harmony.PatchAll();
-            Log.LogInfo("Harmony patch worked yippeeee!!");
+
+            Engine.Current.OnShutdownRequest += (string _) => {
+                Log.LogInfo($"Plugin {PluginMetadata.GUID} is shutting down interprocess");
+                _messenger?.Dispose();
+            };
+
+            Log.LogInfo("Re:Fract is fully loaded!");
         }
         catch (Exception ex)
         {
-            Log.LogError($"Failed to install patches: {ex}");
+            Log.LogError($"Re:Fract failed to patch: {ex}");
         }
     }
 

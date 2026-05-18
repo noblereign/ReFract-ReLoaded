@@ -37,7 +37,7 @@ public class ReFractVolumeTracker : MonoBehaviour
     }
 }
 
-[BepInPlugin("dog.glacier.ReFractUnity", "Re:Fract // Reloaded (for Unity)", "1.0.1")]
+[BepInPlugin("dog.glacier.ReFractUnity", "Re:Fract // Reloaded (for Unity)", "1.0.2")]
 public class Plugin : BaseUnityPlugin
 {
     internal static ReFractConfig BoundConfig { get; private set; } = null!;
@@ -70,14 +70,22 @@ public class Plugin : BaseUnityPlugin
         Debug.Log($"[Re:Fract] Binding configs");
         BoundConfig = new ReFractConfig(base.Config);
         Debug.Log($"[Re:Fract] Setting up interprocess");
-        _msg = new Messenger("dog.glacier.ReFract", [typeof(ReFractCommand)]);
+        _msg = new Messenger("dog.glacier.ReFract", false, "dog.glacier.ReFract");
         _msg.ReceiveObject<ReFractCommand>("SetVariable", HandleSetVariable);
         _msg.SyncConfigEntry(BoundConfig.debugLogging);
         _msg.SyncConfigEntry(BoundConfig.forceRemoveAlpha);
+
+        Application.quitting += () =>
+        {
+            Debug.Log("[Re:Fract] Shutting down interprocess!");
+            _msg.Dispose();
+        };
+
         Debug.Log($"[Re:Fract] Running harmony patches!");
         Harmony harmony = new Harmony("dog.glacier.ReFractUnity");
         harmony.PatchAll();
     }
+
 
     void Update()
     {
